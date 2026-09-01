@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: bitnami/postgresql:latest
+    container_name: postgres_worldmix360
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: world_mix360
+    volumes:
+      - postgres_data:/bitnami/postgresql
+    restart: unless-stopped
+    networks:
+      - worldmixnet
+
+volumes:
+  postgres_data:
+
+networks:
+  worldmixnet:
+    driver: bridge
