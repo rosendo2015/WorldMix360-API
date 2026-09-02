@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: worldmix360-api
+    runtime: node
+    buildCommand: npm ci && npx prisma generate && npm run db:migrate && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: MELI_CLIENT_ID
+        sync: false
+      - key: MELI_CLIENT_SECRET
+        sync: false
+      - key: MELI_REDIRECT_URI
+        sync: false
+      - key: WEB_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: PRODUCT_SYNC_SECRET
+        sync: false

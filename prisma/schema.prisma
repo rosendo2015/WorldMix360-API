@@ -25,3 +25,33 @@ model User {
 
   @@map("users")
 }
+
+model MercadoLivreConnection {
+  id           Int      @id @default(1)
+  sellerId     String   @map("seller_id")
+  accessToken  String   @map("access_token")
+  refreshToken String   @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("mercado_livre_connection")
+}
+
+model Product {
+  id           String   @id
+  title        String
+  price        Float
+  imageUrl     String   @map("image_url")
+  affiliateUrl String   @map("affiliate_url")
+  category     String?
+  available    Boolean  @default(true)
+  featured     Boolean  @default(false)
+  syncedAt     DateTime @map("synced_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([category])
+  @@index([available])
+  @@map("products")
+}

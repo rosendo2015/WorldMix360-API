@@ -5,7 +5,8 @@ Este utilitário percorre todo o projeto (backend ou frontend) e gera um arquivo
 ---
 
 ## 🛠️ Estrutura do Projeto
-````
+
+```
 meu-projeto/
 ├─ backend/
 │   ├─ src/
@@ -18,13 +19,21 @@ meu-projeto/
 ├─ package.json
 └─ tsconfig.json
 ---
-````
+```
+
 ## 📂 Script `generate-md.ts`
 
 Coloque este arquivo dentro da pasta `tools` de cada parte (backend e frontend):
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -40,10 +49,25 @@ const projectName = basename(projectPath);
 // arquivo de saída dentro da pasta tools
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
-  "Dockerfile", "Makefile", ".eslintrc", ".prettierrc",
-  "vite.config.ts", "vite.config.js", "tailwind.config.js", "postcss.config.js"
+  "Dockerfile",
+  "Makefile",
+  ".eslintrc",
+  ".prettierrc",
+  "vite.config.ts",
+  "vite.config.js",
+  "tailwind.config.js",
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -56,7 +80,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js", ".jsx"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js", ".jsx"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -74,13 +99,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -91,10 +123,12 @@ console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
+
 ⚙️ Configuração do TypeScript
+
 - No tsconfig.json da raiz, adicione:
 
-````
+```
 {
   "compilerOptions": {
     "module": "ESNext",
@@ -107,18 +141,23 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
   },
   "include": ["src", "tools"]
 }
-````
+```
+
 📦 Dependências
+
 - Instale:
 
-````
+```
 "scripts": {
-  "generate-md": "ts-node --esm tools/generate-md.ts"
+  "generate-md": "tsx tools/generate-md.ts"
 }
 
-````
+```
+
 🚀 Como Rodar
+
 - No terminal, vá até a pasta desejada e rode:
-````
+
+```
 npm run generate-md
-````
+```

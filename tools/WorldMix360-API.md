@@ -1,0 +1,2398 @@
+
+## .env
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=public"
+
+JWT_SECRET=r0s3nd0
+```
+
+## env.d.ts
+
+```ts
+export declare const env: {
+    DATABASE_URL: string;
+    JWT_SECRET: string;
+};
+//# sourceMappingURL=env.d.ts.map
+```
+
+## env.js
+
+```js
+import process from "process";
+import { z } from "zod";
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string(),
+});
+export const env = envSchema.parse(process.env);
+//# sourceMappingURL=env.js.map
+
+```
+
+## env.ts
+
+```ts
+import "dotenv/config";
+import process from "process";
+import { z } from "zod";
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string(),
+  MELI_CLIENT_ID: z.string().optional(),
+  MELI_CLIENT_SECRET: z.string().optional(),
+  MELI_REDIRECT_URI: z.string().url().optional(),
+  WEB_URL: z.string().url().default("http://localhost:5173"),
+  CORS_ORIGIN: z.string().url().default("http://localhost:5173"),
+  PRODUCT_SYNC_SECRET: z.string().optional(),
+});
+
+export const env = envSchema.parse(process.env);
+
+```
+
+## package.json
+
+```json
+{
+  "name": "worldmix360-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx --watch -r tsconfig-paths/register src/server.ts",
+    "generate-md": "tsx tools/generate-md.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:dev": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "build": "tsc && tsc-alias --resolve-full-paths",
+    "start": "node dist/src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
+    "tsconfig-paths": "^4.2.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.4.0",
+    "@types/pg": "^8.23.1",
+    "prisma": "^7.10.0",
+    "ts-node": "^10.9.2",
+    "tsc-alias": "^1.9.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
+
+```
+
+## prisma7.config.ts
+
+```ts
+import "dotenv/config";
+import { defineConfig, env } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+  },
+  datasource: {
+    url: env("DATABASE_URL"),
+  },
+});
+
+```
+
+## README.md
+
+# WorldMix360 API
+
+API Express + TypeScript + Prisma, preparada para usar PostgreSQL local ou hospedado.
+
+## Desenvolvimento local
+
+Requisitos: Node.js 20+ e PostgreSQL acessível.
+
+Com Docker Desktop instalado e iniciado:
+
+```bash
+docker compose up -d
+npm install
+npx prisma generate
+npm run db:dev
+npm run dev
+```
+
+A API ficará em `http://localhost:3333` e o Studio em:
+
+```bash
+npm run db:studio
+```
+
+Se o Docker não estiver disponível, configure o `DATABASE_URL` no `.env` com a URL externa de qualquer PostgreSQL. O código não depende de Docker.
+
+## Variáveis de ambiente
+
+Copie `.env.example` para `.env` e preencha:
+
+- `DATABASE_URL`: URL do PostgreSQL. Em provedores externos, use a URL pública e `sslmode=require` quando exigido.
+- `JWT_SECRET`: segredo forte para as sessões da API.
+- `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET` e `MELI_REDIRECT_URI`: credenciais OAuth do Mercado Livre.
+- `WEB_URL` e `CORS_ORIGIN`: URL pública do frontend.
+- `PRODUCT_SYNC_SECRET`: segredo usado no header `x-sync-token` para sincronizar produtos.
+
+## Produção
+
+O provedor deve executar:
+
+```bash
+npm ci
+npx prisma generate
+npm run db:migrate
+npm run build
+npm start
+```
+
+O servidor usa a variável `PORT` fornecida pelo provedor e, caso ela não exista, usa `3333`.
+
+No Render, o arquivo `render.yaml` já define esses comandos. Em Hostinger ou outro VPS, use os mesmos comandos em um serviço Node, configure as variáveis no painel e aponte `DATABASE_URL` para o PostgreSQL hospedado.
+
+## Endpoints principais
+
+```text
+GET  /health
+GET  /mercado-livre/authorize
+GET  /mercado-livre/callback
+GET  /products
+POST /products/sync  (header x-sync-token)
+```
+
+
+## skills-lock.json
+
+```json
+{
+  "version": 1,
+  "skills": {
+    "prisma-cli": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-cli/SKILL.md",
+      "computedHash": "b92e55aef78f6796d81433c44738a6733211a04c16e65cbad6d42c5f71092aab"
+    },
+    "prisma-client-api": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-client-api/SKILL.md",
+      "computedHash": "5dcc0793337151efa73a444e5adbc7e1c24180778e83b4fe94c9109c391bd333"
+    },
+    "prisma-compute": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-compute/SKILL.md",
+      "computedHash": "fbbdcf3e01ed876113d18804d38d17359d9f7ba7a4bd353193673d5924f19818"
+    },
+    "prisma-database-setup": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-database-setup/SKILL.md",
+      "computedHash": "0911d9454bd48df3badd23a50fd90a280eabb15dcbd472c14e7b729075dadefb"
+    },
+    "prisma-driver-adapter-implementation": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-driver-adapter-implementation/SKILL.md",
+      "computedHash": "07484627aea6cce4d0f94b4090ff9acc0caa7e104f9988b95abecf80132f4103"
+    },
+    "prisma-mongodb-upgrade": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-mongodb-upgrade/SKILL.md",
+      "computedHash": "f9ba440e88ca4cec9801d04762296e29e99ca08cb8a8156e4f783ecf90279c8f"
+    },
+    "prisma-postgres": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-postgres/SKILL.md",
+      "computedHash": "d669fbd0d8017d16c967f18b20e1c1345cd4a2a0076d762459bfef79f551f655"
+    },
+    "prisma-postgres-setup": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-postgres-setup/SKILL.md",
+      "computedHash": "c89d3aa91285d8e4964fcaa5238c99a3d3c20b617e032e731cf632330a85a5a6"
+    },
+    "prisma-upgrade-v7": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-upgrade-v7/SKILL.md",
+      "computedHash": "dcc6c71adca6b22f37c5bda5ac7fd63c3bb59495596a22e06a29c7c85371558f"
+    }
+  }
+}
+
+```
+
+## src\app.ts
+
+```ts
+import express from "express";
+import { mercadoLivreConfig } from "./configs/mercado-livre";
+import { errorHandling } from "./middleware/error-handling";
+import { routes } from "./routes";
+
+const app = express();
+
+app.use((request, response, next) => {
+  response.header("Access-Control-Allow-Origin", mercadoLivreConfig.corsOrigin);
+  response.header("Access-Control-Allow-Headers", "Content-Type");
+  response.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+  if (request.method === "OPTIONS") return response.sendStatus(204);
+  next();
+});
+app.use(express.json());
+app.get("/health", (_request, response) => {
+  return response.json({ status: "ok" });
+});
+app.use(routes);
+app.use(errorHandling);
+
+export { app };
+
+```
+
+## src\configs\auth.ts
+
+```ts
+import { env } from "../../env";
+
+export interface AuthConfigProps {
+  jwt: {
+    secret: string;
+    expiresIn: string;
+  };
+}
+
+export const authConfig = {
+  jwt: {
+    secret: env.JWT_SECRET,
+    expiresIn: "1d",
+  },
+};
+
+```
+
+## src\configs\mercado-livre.ts
+
+```ts
+import { env } from "../../env";
+
+export const mercadoLivreConfig = {
+  clientId: env.MELI_CLIENT_ID,
+  clientSecret: env.MELI_CLIENT_SECRET,
+  redirectUri: env.MELI_REDIRECT_URI,
+  webUrl: env.WEB_URL,
+  corsOrigin: env.CORS_ORIGIN,
+};
+
+export function assertMercadoLivreConfig() {
+  if (
+    !mercadoLivreConfig.clientId ||
+    !mercadoLivreConfig.clientSecret ||
+    !mercadoLivreConfig.redirectUri
+  ) {
+    throw new Error(
+      "MELI_CLIENT_ID, MELI_CLIENT_SECRET e MELI_REDIRECT_URI precisam estar configurados",
+    );
+  }
+}
+
+```
+
+## src\controllers\mercado-livre-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+import { mercadoLivreConfig } from "@/configs/mercado-livre";
+import {
+  connectMercadoLivre,
+  getMercadoLivreAuthorizationUrl,
+  getMercadoLivreProducts,
+} from "@/services/mercado-livre-service";
+
+export class MercadoLivreController {
+  authorize(_request: Request, response: Response) {
+    return response.json({
+      authorizationUrl: getMercadoLivreAuthorizationUrl(),
+    });
+  }
+
+  async callback(request: Request, response: Response) {
+    const query = z
+      .object({ code: z.string(), state: z.string() })
+      .parse(request.query);
+    await connectMercadoLivre(query.code, query.state);
+    return response.redirect(
+      `${mercadoLivreConfig.webUrl}/?mercadoLivre=connected`,
+    );
+  }
+
+  async products(request: Request, response: Response) {
+    const query = z
+      .object({ search: z.string().optional() })
+      .parse(request.query);
+    return response.json({
+      products: await getMercadoLivreProducts(query.search),
+    });
+  }
+}
+
+```
+
+## src\controllers\products-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+import { mercadoLivreConfig } from "@/configs/mercado-livre";
+import { prisma } from "@/database/prisma";
+import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
+
+export class ProductsController {
+  async index(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        category: z.string().trim().optional(),
+        featured: z.coerce.boolean().optional(),
+      })
+      .parse(request.query);
+    const products = await prisma.product.findMany({
+      where: {
+        available: true,
+        ...(query.category ? { category: query.category } : {}),
+        ...(query.featured !== undefined ? { featured: query.featured } : {}),
+        ...(query.search
+          ? { title: { contains: query.search, mode: "insensitive" } }
+          : {}),
+      },
+      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+    });
+    return response.json({ products });
+  }
+
+  async sync(request: Request, response: Response) {
+    const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
+    const receivedSecret = request.header("x-sync-token");
+    if (!expectedSecret || receivedSecret !== expectedSecret) {
+      return response.status(401).json({ message: "Não autorizado" });
+    }
+    const products = await syncMercadoLivreProducts();
+    return response.json({ products, synced: products.length });
+  }
+}
+
+```
+
+## src\controllers\sessions-controllers.ts
+
+```ts
+import { compare } from "bcrypt";
+import type { Request, Response } from "express";
+import jwt, { type SignOptions } from "jsonwebtoken";
+import { z } from "zod";
+import { authConfig } from "@/configs/auth";
+import { prisma } from "@/database/prisma";
+import { AppError } from "../utils/AppError";
+
+class SessionsController {
+  async create(request: Request, response: Response) {
+    const bodySchema = z.object({
+      email: z.email({ message: "Email invalid" }),
+      password: z.string(),
+    });
+    const { email, password } = bodySchema.parse(request.body);
+    const user = await prisma.user.findFirst({ where: { email } });
+    if (!user) {
+      throw new AppError("Email or Password invalid!", 401);
+    }
+    const passwordMatched = await compare(password, user.password);
+    if (!passwordMatched) {
+      throw new AppError("Email or Password invalid!", 401);
+    }
+    const { secret } = authConfig.jwt;
+
+    if (!secret) {
+      throw new AppError("JWT_SECRET não configurado", 500);
+    }
+
+    const options: SignOptions = {
+      subject: String(user.id),
+      expiresIn: "1d",
+    };
+
+    const token = jwt.sign({ role: user.role ?? "member" }, secret, options);
+    const { password: _, ...userWithoutPassword } = user;
+
+    return response.json({ token, user: userWithoutPassword });
+  }
+}
+
+export { SessionsController };
+
+```
+
+## src\controllers\users-controllers.ts
+
+```ts
+import { hash } from "bcrypt";
+import type { NextFunction, Request, Response } from "express";
+import z from "zod";
+import { prisma } from "@/database/prisma";
+import { AppError } from "@/utils/AppError";
+
+class UserController {
+  async create(request: Request, response: Response, next: NextFunction) {
+    try {
+      const bodySchema = z.object({
+        name: z.string().trim().min(3),
+        email: z.email(),
+        password: z.string().min(6),
+      });
+
+      const { name, email, password } = bodySchema.parse(request.body);
+
+      const userWithSameEmail = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (userWithSameEmail) {
+        throw new AppError("Email already exists", 400);
+      }
+
+      const hashedPassword = await hash(password, 8);
+
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+        },
+      });
+      const { password: _, ...userWithoutPassword } = user;
+      return response.json(userWithoutPassword);
+    } catch (error) {
+      console.log(error);
+      next();
+    }
+  }
+  async index(request: Request, response: Response, next: NextFunction) {
+    const users = await prisma.user.findMany();
+    return response.json(users);
+  }
+  async update(request: Request, response: Response, next: NextFunction) {
+    try {
+      const paramsSchema = z.object({
+        id: z.string().uuid({ message: "ID do usuário inválido." }),
+      });
+
+      const { id } = paramsSchema.parse(request.params);
+
+      const bodySchema = z.object({
+        name: z
+          .string()
+          .trim()
+          .min(3, { message: "O nome deve ter pelo menos 3 caracteres." })
+          .optional(),
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
+        role: z.enum(["ADMIN", "TECNICO", "CLIENTE"]).optional(),
+      });
+
+      const data = bodySchema.parse(request.body);
+      const roleMap = {
+        ADMIN: "admin",
+        TECNICO: "sale",
+        CLIENTE: "customer",
+      } as const;
+
+      const cleanData: {
+        name?: string;
+        email?: string;
+        password?: string;
+        role?: "customer" | "admin" | "sale";
+      } = {};
+
+      if (data.name !== undefined) cleanData.name = data.name;
+      if (data.email !== undefined) cleanData.email = data.email;
+      if (data.password !== undefined)
+        cleanData.password = await hash(data.password, 8);
+      if (data.role !== undefined) cleanData.role = roleMap[data.role];
+
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (!user) {
+        throw new AppError("Usuário não encontrado", 404);
+      }
+
+      if (Object.keys(cleanData).length === 0) {
+        throw new AppError("Nenhum campo informado para atualização", 400);
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: cleanData,
+      });
+
+      const { password, ...userWithoutPassword } = updatedUser;
+
+      return response.status(200).json(userWithoutPassword);
+    } catch (error) {
+      console.log(error);
+      next(error);
+    }
+  }
+}
+
+export { UserController };
+
+```
+
+## src\database\prisma.ts
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
+import { env } from "../../env";
+import { PrismaClient } from "../generated/prisma/client";
+
+const pool = new Pool({
+  connectionString: env.DATABASE_URL,
+});
+
+const adapter = new PrismaPg(pool);
+
+export const prisma = new PrismaClient({
+  adapter,
+  log: process.env.NODE_ENV === "production" ? [] : ["query"],
+});
+
+```
+
+## src\middleware\error-handling.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import { ZodError } from "zod";
+import { AppError } from "../utils/AppError.js";
+
+export function errorHandling(
+  error: Error,
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (error instanceof AppError) {
+    return response.status(error.statusCode).json({ message: error.message });
+  }
+  if (error instanceof ZodError) {
+    return response
+      .status(400)
+      .json({ message: "Validation error", issues: error });
+  }
+  return response.status(500).json({ message: error.message });
+}
+
+```
+
+## src\routes\index.ts
+
+```ts
+import { Router } from "express";
+import { mercadoLivreRoutes } from "./mercado-livre-routes";
+import { productRoutes } from "./product-routes";
+import { sessionsRoutes } from "./sessions-routes";
+import { userRoutes } from "./user-routes";
+
+const routes = Router();
+
+routes.use("/users", userRoutes);
+routes.use("/session", sessionsRoutes);
+routes.use("/mercado-livre", mercadoLivreRoutes);
+routes.use("/products", productRoutes);
+
+export { routes };
+
+```
+
+## src\routes\mercado-livre-routes.ts
+
+```ts
+import { Router } from "express";
+import { MercadoLivreController } from "@/controllers/mercado-livre-controller";
+
+const mercadoLivreRoutes = Router();
+const controller = new MercadoLivreController();
+
+mercadoLivreRoutes.get("/authorize", controller.authorize.bind(controller));
+mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
+mercadoLivreRoutes.get("/products", controller.products.bind(controller));
+
+export { mercadoLivreRoutes };
+
+```
+
+## src\routes\product-routes.ts
+
+```ts
+import { Router } from "express";
+import { ProductsController } from "@/controllers/products-controller";
+
+const productRoutes = Router();
+const controller = new ProductsController();
+
+productRoutes.get("/", controller.index.bind(controller));
+productRoutes.post("/sync", controller.sync.bind(controller));
+
+export { productRoutes };
+
+```
+
+## src\routes\sessions-routes.ts
+
+```ts
+import { Router } from "express";
+import { SessionsController } from "@/controllers/sessions-controllers";
+
+const sessionsRoutes = Router();
+const sessionsController = new SessionsController();
+
+sessionsRoutes.post("/", sessionsController.create);
+
+export { sessionsRoutes };
+
+```
+
+## src\routes\user-routes.ts
+
+```ts
+import { Router } from "express";
+import { UserController } from "@/controllers/users-controllers";
+
+const userRoutes = Router();
+const userController = new UserController();
+
+userRoutes.post("/", userController.create);
+userRoutes.get("/", userController.index);
+userRoutes.patch("/:id", userController.update);
+userRoutes.put("/:id", userController.update);
+
+export { userRoutes };
+
+```
+
+## src\server.ts
+
+```ts
+import { app } from "@/app";
+
+const PORT = Number(process.env.PORT ?? 3333);
+
+app.listen(PORT, () => {
+  console.log(`WorldMix360 API rodando na porta: ${PORT}`);
+});
+
+```
+
+## src\services\mercado-livre-service.ts
+
+```ts
+import { randomBytes } from "node:crypto";
+import jwt from "jsonwebtoken";
+import { z } from "zod";
+import {
+  assertMercadoLivreConfig,
+  mercadoLivreConfig,
+} from "@/configs/mercado-livre";
+import { prisma } from "@/database/prisma";
+
+const tokenResponseSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string(),
+  user_id: z.union([z.string(), z.number()]),
+  expires_in: z.number(),
+});
+
+const apiBaseUrl = "https://api.mercadolibre.com";
+
+function getStateToken() {
+  return jwt.sign(
+    { nonce: randomBytes(16).toString("hex") },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "10m",
+    },
+  );
+}
+
+export function getMercadoLivreAuthorizationUrl() {
+  assertMercadoLivreConfig();
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: mercadoLivreConfig.clientId!,
+    redirect_uri: mercadoLivreConfig.redirectUri!,
+    state: getStateToken(),
+  });
+  return `https://auth.mercadolivre.com.br/authorization?${params}`;
+}
+
+export async function connectMercadoLivre(code: string, state: string) {
+  assertMercadoLivreConfig();
+  jwt.verify(state, process.env.JWT_SECRET!);
+
+  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: mercadoLivreConfig.clientId!,
+      client_secret: mercadoLivreConfig.clientSecret!,
+      code,
+      redirect_uri: mercadoLivreConfig.redirectUri!,
+    }),
+  });
+
+  if (!response.ok)
+    throw new Error(`Mercado Livre recusou a autorização (${response.status})`);
+  const token = tokenResponseSchema.parse(await response.json());
+  return saveConnection(token);
+}
+
+async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
+  return prisma.mercadoLivreConnection.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      sellerId: String(token.user_id),
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+    },
+    update: {
+      sellerId: String(token.user_id),
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+    },
+  });
+}
+
+async function getAccessToken() {
+  const connection = await prisma.mercadoLivreConnection.findUnique({
+    where: { id: 1 },
+  });
+  if (!connection)
+    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  if (connection.expiresAt.getTime() > Date.now() + 60_000)
+    return connection.accessToken;
+
+  assertMercadoLivreConfig();
+  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: mercadoLivreConfig.clientId!,
+      client_secret: mercadoLivreConfig.clientSecret!,
+      refresh_token: connection.refreshToken,
+    }),
+  });
+  if (!response.ok)
+    throw new Error("Não foi possível renovar a autorização do Mercado Livre");
+  return (
+    await saveConnection(tokenResponseSchema.parse(await response.json()))
+  ).accessToken;
+}
+
+export async function getMercadoLivreProducts(search?: string) {
+  const connection = await prisma.mercadoLivreConnection.findUnique({
+    where: { id: 1 },
+  });
+  if (!connection)
+    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  const accessToken = await getAccessToken();
+  const params = new URLSearchParams({ status: "active", limit: "50" });
+  const idsResponse = await fetch(
+    `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  if (!idsResponse.ok)
+    throw new Error("Não foi possível buscar os produtos no Mercado Livre");
+  const ids = z
+    .object({ results: z.array(z.string()) })
+    .parse(await idsResponse.json()).results;
+  if (!ids.length) return [];
+
+  const detailsResponse = await fetch(
+    `${apiBaseUrl}/items?ids=${ids.join(",")}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  if (!detailsResponse.ok)
+    throw new Error("Não foi possível carregar os detalhes dos produtos");
+  const details = z
+    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
+    .parse(await detailsResponse.json());
+  const normalizedSearch = search?.trim().toLocaleLowerCase();
+  return details
+    .map(({ body }) => body)
+    .filter(
+      (item) =>
+        !normalizedSearch ||
+        String(item.title).toLocaleLowerCase().includes(normalizedSearch),
+    )
+    .map((item) => ({
+      id: String(item.id),
+      title: String(item.title),
+      price: Number(item.price ?? 0),
+      imageUrl: String(item.thumbnail ?? ""),
+      affiliateUrl: String(item.permalink ?? "#"),
+      category: item.category_id ? String(item.category_id) : null,
+    }));
+}
+
+export async function syncMercadoLivreProducts() {
+  const products = await getMercadoLivreProducts();
+  const syncedAt = new Date();
+
+  await prisma.$transaction(
+    products.map((product) =>
+      prisma.product.upsert({
+        where: { id: product.id },
+        create: { ...product, available: true, syncedAt },
+        update: { ...product, available: true, syncedAt },
+      }),
+    ),
+  );
+
+  const productIds = products.map((product) => product.id);
+  await prisma.product.updateMany({
+    where: productIds.length ? { id: { notIn: productIds } } : {},
+    data: { available: false, syncedAt },
+  });
+
+  return prisma.product.findMany({
+    where: { available: true },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+```
+
+## src\types\aliases.d.ts
+
+```ts
+declare module "@/*";
+
+```
+
+## src\utils\AppError.ts
+
+```ts
+class AppError {
+  message: string;
+  statusCode: number;
+
+  constructor(message: string, statusCode: number = 400) {
+    this.message = message;
+    this.statusCode = statusCode;
+  }
+}
+
+export { AppError };
+
+```
+
+## tools\generate-md.ts
+
+```ts
+import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import { join, extname, dirname, resolve, relative, basename } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// raiz do projeto (um nível acima de tools)
+const projectPath = resolve(__dirname, "..");
+
+// pega o nome da pasta raiz (nome do projeto)
+const projectName = basename(projectPath);
+
+// gera o arquivo dentro de tools com o nome do projeto
+const outputFile = join(__dirname, `${projectName}.md`);
+
+const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const specialFiles = [
+  "Dockerfile",
+  "Makefile",
+  ".eslintrc",
+  ".prettierrc",
+  "vite.config.ts",
+  "vite.config.js",
+  "tailwind.config.js",
+  "postcss.config.js"
+];
+const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
+const excludeFiles = ["package-lock.json"];
+
+if (existsSync(outputFile)) unlinkSync(outputFile);
+
+function formatHeader(fullPath: string): string {
+  const rel = relative(projectPath, fullPath);
+  return `## ${rel}`;
+}
+
+function wrapContent(ext: string, content: string): string {
+  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
+  if (ext === ".md") return `\n${content}\n`;
+  if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
+  if (specialFiles.includes(ext)) return `\n\`\`\`\n${content}\n\`\`\`\n`;
+  return `\n${content}\n`;
+}
+
+function walk(dir: string): void {
+  for (const file of readdirSync(dir)) {
+    const fullPath = join(dir, file);
+    const stat = statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      if (!excludeDirs.includes(file)) walk(fullPath);
+    } else {
+      const ext = extname(file) || file;
+      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+        try {
+          const content = readFileSync(fullPath, "utf8");
+          appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
+          appendFileSync(outputFile, wrapContent(ext, content));
+        } catch (err) {
+          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+        }
+      }
+    }
+  }
+}
+
+console.log(`🔍 Gerando arquivo ${projectName}.md...`);
+walk(projectPath);
+console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
+
+```
+
+## tools\instrucoes.md
+
+📘 Guia de Uso — Script `generate-md.ts`
+
+Este utilitário percorre todo o projeto (backend ou frontend) e gera um arquivo `.md` com o conteúdo dos arquivos, formatado em Markdown e destacado por tipo de código.
+
+---
+
+## 🛠️ Estrutura do Projeto
+
+```
+meu-projeto/
+├─ backend/
+│   ├─ src/
+│   └─ tools/
+│       └─ generate-md.ts
+├─ frontend/
+│   ├─ src/
+│   └─ tools/
+│       └─ generate-md.ts
+├─ package.json
+└─ tsconfig.json
+---
+```
+
+## 📂 Script `generate-md.ts`
+
+Coloque este arquivo dentro da pasta `tools` de cada parte (backend e frontend):
+
+```ts
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
+import { join, extname, dirname, resolve, relative, basename } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// raiz do projeto (um nível acima da pasta tools)
+const projectPath = resolve(__dirname, "..");
+
+// nome da pasta raiz (ex: backend ou frontend)
+const projectName = basename(projectPath);
+
+// arquivo de saída dentro da pasta tools
+const outputFile = join(__dirname, `${projectName}.md`);
+
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
+const specialFiles = [
+  "Dockerfile",
+  "Makefile",
+  ".eslintrc",
+  ".prettierrc",
+  "vite.config.ts",
+  "vite.config.js",
+  "tailwind.config.js",
+  "postcss.config.js",
+];
+const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
+const excludeFiles = ["package-lock.json"];
+
+if (existsSync(outputFile)) unlinkSync(outputFile);
+
+function formatHeader(fullPath: string): string {
+  const rel = relative(projectPath, fullPath);
+  return `## ${rel}`;
+}
+
+function wrapContent(ext: string, content: string): string {
+  if ([".ts", ".tsx", ".js", ".jsx"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
+  if (ext === ".md") return `\n${content}\n`;
+  if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
+  if (ext === ".css") return `\n\`\`\`css\n${content}\n\`\`\`\n`;
+  if (specialFiles.includes(ext)) return `\n\`\`\`\n${content}\n\`\`\`\n`;
+  return `\n${content}\n`;
+}
+
+function walk(dir: string): void {
+  for (const file of readdirSync(dir)) {
+    const fullPath = join(dir, file);
+    const stat = statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      if (!excludeDirs.includes(file)) walk(fullPath);
+    } else {
+      const ext = extname(file) || file;
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
+        try {
+          const content = readFileSync(fullPath, "utf8");
+          appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
+          appendFileSync(outputFile, wrapContent(ext, content));
+        } catch (err) {
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
+        }
+      }
+    }
+  }
+}
+
+console.log(`🔍 Gerando arquivo ${projectName}.md...`);
+walk(projectPath);
+console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
+```
+
+⚙️ Configuração do TypeScript
+
+- No tsconfig.json da raiz, adicione:
+
+```
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": ["src", "tools"]
+}
+```
+
+📦 Dependências
+
+- Instale:
+
+```
+"scripts": {
+  "generate-md": "tsx tools/generate-md.ts"
+}
+
+```
+
+🚀 Como Rodar
+
+- No terminal, vá até a pasta desejada e rode:
+
+```
+npm run generate-md
+```
+
+
+## tools\WorldMix360-API.md
+
+
+## .env
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=public"
+
+JWT_SECRET=r0s3nd0
+```
+
+## env.d.ts
+
+```ts
+export declare const env: {
+    DATABASE_URL: string;
+    JWT_SECRET: string;
+};
+//# sourceMappingURL=env.d.ts.map
+```
+
+## env.js
+
+```js
+import process from "process";
+import { z } from "zod";
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string(),
+});
+export const env = envSchema.parse(process.env);
+//# sourceMappingURL=env.js.map
+
+```
+
+## env.ts
+
+```ts
+import "dotenv/config";
+import process from "process";
+import { z } from "zod";
+
+const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string(),
+  MELI_CLIENT_ID: z.string().optional(),
+  MELI_CLIENT_SECRET: z.string().optional(),
+  MELI_REDIRECT_URI: z.string().url().optional(),
+  WEB_URL: z.string().url().default("http://localhost:5173"),
+  CORS_ORIGIN: z.string().url().default("http://localhost:5173"),
+  PRODUCT_SYNC_SECRET: z.string().optional(),
+});
+
+export const env = envSchema.parse(process.env);
+
+```
+
+## package.json
+
+```json
+{
+  "name": "worldmix360-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx --watch -r tsconfig-paths/register src/server.ts",
+    "generate-md": "tsx tools/generate-md.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:dev": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "build": "tsc && tsc-alias --resolve-full-paths",
+    "start": "node dist/src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
+    "tsconfig-paths": "^4.2.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.4.0",
+    "@types/pg": "^8.23.1",
+    "prisma": "^7.10.0",
+    "ts-node": "^10.9.2",
+    "tsc-alias": "^1.9.3",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
+
+```
+
+## prisma7.config.ts
+
+```ts
+import "dotenv/config";
+import { defineConfig, env } from "prisma/config";
+
+export default defineConfig({
+  schema: "prisma/schema.prisma",
+  migrations: {
+    path: "prisma/migrations",
+  },
+  datasource: {
+    url: env("DATABASE_URL"),
+  },
+});
+
+```
+
+## README.md
+
+# WorldMix360 API
+
+API Express + TypeScript + Prisma, preparada para usar PostgreSQL local ou hospedado.
+
+## Desenvolvimento local
+
+Requisitos: Node.js 20+ e PostgreSQL acessível.
+
+Com Docker Desktop instalado e iniciado:
+
+```bash
+docker compose up -d
+npm install
+npx prisma generate
+npm run db:dev
+npm run dev
+```
+
+A API ficará em `http://localhost:3333` e o Studio em:
+
+```bash
+npm run db:studio
+```
+
+Se o Docker não estiver disponível, configure o `DATABASE_URL` no `.env` com a URL externa de qualquer PostgreSQL. O código não depende de Docker.
+
+## Variáveis de ambiente
+
+Copie `.env.example` para `.env` e preencha:
+
+- `DATABASE_URL`: URL do PostgreSQL. Em provedores externos, use a URL pública e `sslmode=require` quando exigido.
+- `JWT_SECRET`: segredo forte para as sessões da API.
+- `MELI_CLIENT_ID`, `MELI_CLIENT_SECRET` e `MELI_REDIRECT_URI`: credenciais OAuth do Mercado Livre.
+- `WEB_URL` e `CORS_ORIGIN`: URL pública do frontend.
+- `PRODUCT_SYNC_SECRET`: segredo usado no header `x-sync-token` para sincronizar produtos.
+
+## Produção
+
+O provedor deve executar:
+
+```bash
+npm ci
+npx prisma generate
+npm run db:migrate
+npm run build
+npm start
+```
+
+O servidor usa a variável `PORT` fornecida pelo provedor e, caso ela não exista, usa `3333`.
+
+No Render, o arquivo `render.yaml` já define esses comandos. Em Hostinger ou outro VPS, use os mesmos comandos em um serviço Node, configure as variáveis no painel e aponte `DATABASE_URL` para o PostgreSQL hospedado.
+
+## Endpoints principais
+
+```text
+GET  /health
+GET  /mercado-livre/authorize
+GET  /mercado-livre/callback
+GET  /products
+POST /products/sync  (header x-sync-token)
+```
+
+
+## skills-lock.json
+
+```json
+{
+  "version": 1,
+  "skills": {
+    "prisma-cli": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-cli/SKILL.md",
+      "computedHash": "b92e55aef78f6796d81433c44738a6733211a04c16e65cbad6d42c5f71092aab"
+    },
+    "prisma-client-api": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-client-api/SKILL.md",
+      "computedHash": "5dcc0793337151efa73a444e5adbc7e1c24180778e83b4fe94c9109c391bd333"
+    },
+    "prisma-compute": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-compute/SKILL.md",
+      "computedHash": "fbbdcf3e01ed876113d18804d38d17359d9f7ba7a4bd353193673d5924f19818"
+    },
+    "prisma-database-setup": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-database-setup/SKILL.md",
+      "computedHash": "0911d9454bd48df3badd23a50fd90a280eabb15dcbd472c14e7b729075dadefb"
+    },
+    "prisma-driver-adapter-implementation": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-driver-adapter-implementation/SKILL.md",
+      "computedHash": "07484627aea6cce4d0f94b4090ff9acc0caa7e104f9988b95abecf80132f4103"
+    },
+    "prisma-mongodb-upgrade": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-mongodb-upgrade/SKILL.md",
+      "computedHash": "f9ba440e88ca4cec9801d04762296e29e99ca08cb8a8156e4f783ecf90279c8f"
+    },
+    "prisma-postgres": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-postgres/SKILL.md",
+      "computedHash": "d669fbd0d8017d16c967f18b20e1c1345cd4a2a0076d762459bfef79f551f655"
+    },
+    "prisma-postgres-setup": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-postgres-setup/SKILL.md",
+      "computedHash": "c89d3aa91285d8e4964fcaa5238c99a3d3c20b617e032e731cf632330a85a5a6"
+    },
+    "prisma-upgrade-v7": {
+      "source": "prisma/skills",
+      "sourceType": "github",
+      "skillPath": "prisma-upgrade-v7/SKILL.md",
+      "computedHash": "dcc6c71adca6b22f37c5bda5ac7fd63c3bb59495596a22e06a29c7c85371558f"
+    }
+  }
+}
+
+```
+
+## src\app.ts
+
+```ts
+import express from "express";
+import { mercadoLivreConfig } from "./configs/mercado-livre";
+import { errorHandling } from "./middleware/error-handling";
+import { routes } from "./routes";
+
+const app = express();
+
+app.use((request, response, next) => {
+  response.header("Access-Control-Allow-Origin", mercadoLivreConfig.corsOrigin);
+  response.header("Access-Control-Allow-Headers", "Content-Type");
+  response.header("Access-Control-Allow-Methods", "GET, OPTIONS");
+  if (request.method === "OPTIONS") return response.sendStatus(204);
+  next();
+});
+app.use(express.json());
+app.get("/health", (_request, response) => {
+  return response.json({ status: "ok" });
+});
+app.use(routes);
+app.use(errorHandling);
+
+export { app };
+
+```
+
+## src\configs\auth.ts
+
+```ts
+import { env } from "../../env";
+
+export interface AuthConfigProps {
+  jwt: {
+    secret: string;
+    expiresIn: string;
+  };
+}
+
+export const authConfig = {
+  jwt: {
+    secret: env.JWT_SECRET,
+    expiresIn: "1d",
+  },
+};
+
+```
+
+## src\configs\mercado-livre.ts
+
+```ts
+import { env } from "../../env";
+
+export const mercadoLivreConfig = {
+  clientId: env.MELI_CLIENT_ID,
+  clientSecret: env.MELI_CLIENT_SECRET,
+  redirectUri: env.MELI_REDIRECT_URI,
+  webUrl: env.WEB_URL,
+  corsOrigin: env.CORS_ORIGIN,
+};
+
+export function assertMercadoLivreConfig() {
+  if (
+    !mercadoLivreConfig.clientId ||
+    !mercadoLivreConfig.clientSecret ||
+    !mercadoLivreConfig.redirectUri
+  ) {
+    throw new Error(
+      "MELI_CLIENT_ID, MELI_CLIENT_SECRET e MELI_REDIRECT_URI precisam estar configurados",
+    );
+  }
+}
+
+```
+
+## src\controllers\mercado-livre-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+import { mercadoLivreConfig } from "@/configs/mercado-livre";
+import {
+  connectMercadoLivre,
+  getMercadoLivreAuthorizationUrl,
+  getMercadoLivreProducts,
+} from "@/services/mercado-livre-service";
+
+export class MercadoLivreController {
+  authorize(_request: Request, response: Response) {
+    return response.json({
+      authorizationUrl: getMercadoLivreAuthorizationUrl(),
+    });
+  }
+
+  async callback(request: Request, response: Response) {
+    const query = z
+      .object({ code: z.string(), state: z.string() })
+      .parse(request.query);
+    await connectMercadoLivre(query.code, query.state);
+    return response.redirect(
+      `${mercadoLivreConfig.webUrl}/?mercadoLivre=connected`,
+    );
+  }
+
+  async products(request: Request, response: Response) {
+    const query = z
+      .object({ search: z.string().optional() })
+      .parse(request.query);
+    return response.json({
+      products: await getMercadoLivreProducts(query.search),
+    });
+  }
+}
+
+```
+
+## src\controllers\products-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+import { mercadoLivreConfig } from "@/configs/mercado-livre";
+import { prisma } from "@/database/prisma";
+import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
+
+export class ProductsController {
+  async index(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        category: z.string().trim().optional(),
+        featured: z.coerce.boolean().optional(),
+      })
+      .parse(request.query);
+    const products = await prisma.product.findMany({
+      where: {
+        available: true,
+        ...(query.category ? { category: query.category } : {}),
+        ...(query.featured !== undefined ? { featured: query.featured } : {}),
+        ...(query.search
+          ? { title: { contains: query.search, mode: "insensitive" } }
+          : {}),
+      },
+      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+    });
+    return response.json({ products });
+  }
+
+  async sync(request: Request, response: Response) {
+    const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
+    const receivedSecret = request.header("x-sync-token");
+    if (!expectedSecret || receivedSecret !== expectedSecret) {
+      return response.status(401).json({ message: "Não autorizado" });
+    }
+    const products = await syncMercadoLivreProducts();
+    return response.json({ products, synced: products.length });
+  }
+}
+
+```
+
+## src\controllers\sessions-controllers.ts
+
+```ts
+import { compare } from "bcrypt";
+import type { Request, Response } from "express";
+import jwt, { type SignOptions } from "jsonwebtoken";
+import { z } from "zod";
+import { authConfig } from "@/configs/auth";
+import { prisma } from "@/database/prisma";
+import { AppError } from "../utils/AppError";
+
+class SessionsController {
+  async create(request: Request, response: Response) {
+    const bodySchema = z.object({
+      email: z.email({ message: "Email invalid" }),
+      password: z.string(),
+    });
+    const { email, password } = bodySchema.parse(request.body);
+    const user = await prisma.user.findFirst({ where: { email } });
+    if (!user) {
+      throw new AppError("Email or Password invalid!", 401);
+    }
+    const passwordMatched = await compare(password, user.password);
+    if (!passwordMatched) {
+      throw new AppError("Email or Password invalid!", 401);
+    }
+    const { secret } = authConfig.jwt;
+
+    if (!secret) {
+      throw new AppError("JWT_SECRET não configurado", 500);
+    }
+
+    const options: SignOptions = {
+      subject: String(user.id),
+      expiresIn: "1d",
+    };
+
+    const token = jwt.sign({ role: user.role ?? "member" }, secret, options);
+    const { password: _, ...userWithoutPassword } = user;
+
+    return response.json({ token, user: userWithoutPassword });
+  }
+}
+
+export { SessionsController };
+
+```
+
+## src\controllers\users-controllers.ts
+
+```ts
+import { hash } from "bcrypt";
+import type { NextFunction, Request, Response } from "express";
+import z from "zod";
+import { prisma } from "@/database/prisma";
+import { AppError } from "@/utils/AppError";
+
+class UserController {
+  async create(request: Request, response: Response, next: NextFunction) {
+    try {
+      const bodySchema = z.object({
+        name: z.string().trim().min(3),
+        email: z.email(),
+        password: z.string().min(6),
+      });
+
+      const { name, email, password } = bodySchema.parse(request.body);
+
+      const userWithSameEmail = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (userWithSameEmail) {
+        throw new AppError("Email already exists", 400);
+      }
+
+      const hashedPassword = await hash(password, 8);
+
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+        },
+      });
+      const { password: _, ...userWithoutPassword } = user;
+      return response.json(userWithoutPassword);
+    } catch (error) {
+      console.log(error);
+      next();
+    }
+  }
+  async index(request: Request, response: Response, next: NextFunction) {
+    const users = await prisma.user.findMany();
+    return response.json(users);
+  }
+  async update(request: Request, response: Response, next: NextFunction) {
+    try {
+      const paramsSchema = z.object({
+        id: z.string().uuid({ message: "ID do usuário inválido." }),
+      });
+
+      const { id } = paramsSchema.parse(request.params);
+
+      const bodySchema = z.object({
+        name: z
+          .string()
+          .trim()
+          .min(3, { message: "O nome deve ter pelo menos 3 caracteres." })
+          .optional(),
+        email: z.string().email().optional(),
+        password: z.string().min(6).optional(),
+        role: z.enum(["ADMIN", "TECNICO", "CLIENTE"]).optional(),
+      });
+
+      const data = bodySchema.parse(request.body);
+      const roleMap = {
+        ADMIN: "admin",
+        TECNICO: "sale",
+        CLIENTE: "customer",
+      } as const;
+
+      const cleanData: {
+        name?: string;
+        email?: string;
+        password?: string;
+        role?: "customer" | "admin" | "sale";
+      } = {};
+
+      if (data.name !== undefined) cleanData.name = data.name;
+      if (data.email !== undefined) cleanData.email = data.email;
+      if (data.password !== undefined)
+        cleanData.password = await hash(data.password, 8);
+      if (data.role !== undefined) cleanData.role = roleMap[data.role];
+
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (!user) {
+        throw new AppError("Usuário não encontrado", 404);
+      }
+
+      if (Object.keys(cleanData).length === 0) {
+        throw new AppError("Nenhum campo informado para atualização", 400);
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id },
+        data: cleanData,
+      });
+
+      const { password, ...userWithoutPassword } = updatedUser;
+
+      return response.status(200).json(userWithoutPassword);
+    } catch (error) {
+      console.log(error);
+      next(error);
+    }
+  }
+}
+
+export { UserController };
+
+```
+
+## src\database\prisma.ts
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
+import { env } from "../../env";
+import { PrismaClient } from "../generated/prisma/client";
+
+const pool = new Pool({
+  connectionString: env.DATABASE_URL,
+});
+
+const adapter = new PrismaPg(pool);
+
+export const prisma = new PrismaClient({
+  adapter,
+  log: process.env.NODE_ENV === "production" ? [] : ["query"],
+});
+
+```
+
+## src\middleware\error-handling.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import { ZodError } from "zod";
+import { AppError } from "../utils/AppError.js";
+
+export function errorHandling(
+  error: Error,
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (error instanceof AppError) {
+    return response.status(error.statusCode).json({ message: error.message });
+  }
+  if (error instanceof ZodError) {
+    return response
+      .status(400)
+      .json({ message: "Validation error", issues: error });
+  }
+  return response.status(500).json({ message: error.message });
+}
+
+```
+
+## src\routes\index.ts
+
+```ts
+import { Router } from "express";
+import { mercadoLivreRoutes } from "./mercado-livre-routes";
+import { productRoutes } from "./product-routes";
+import { sessionsRoutes } from "./sessions-routes";
+import { userRoutes } from "./user-routes";
+
+const routes = Router();
+
+routes.use("/users", userRoutes);
+routes.use("/session", sessionsRoutes);
+routes.use("/mercado-livre", mercadoLivreRoutes);
+routes.use("/products", productRoutes);
+
+export { routes };
+
+```
+
+## src\routes\mercado-livre-routes.ts
+
+```ts
+import { Router } from "express";
+import { MercadoLivreController } from "@/controllers/mercado-livre-controller";
+
+const mercadoLivreRoutes = Router();
+const controller = new MercadoLivreController();
+
+mercadoLivreRoutes.get("/authorize", controller.authorize.bind(controller));
+mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
+mercadoLivreRoutes.get("/products", controller.products.bind(controller));
+
+export { mercadoLivreRoutes };
+
+```
+
+## src\routes\product-routes.ts
+
+```ts
+import { Router } from "express";
+import { ProductsController } from "@/controllers/products-controller";
+
+const productRoutes = Router();
+const controller = new ProductsController();
+
+productRoutes.get("/", controller.index.bind(controller));
+productRoutes.post("/sync", controller.sync.bind(controller));
+
+export { productRoutes };
+
+```
+
+## src\routes\sessions-routes.ts
+
+```ts
+import { Router } from "express";
+import { SessionsController } from "@/controllers/sessions-controllers";
+
+const sessionsRoutes = Router();
+const sessionsController = new SessionsController();
+
+sessionsRoutes.post("/", sessionsController.create);
+
+export { sessionsRoutes };
+
+```
+
+## src\routes\user-routes.ts
+
+```ts
+import { Router } from "express";
+import { UserController } from "@/controllers/users-controllers";
+
+const userRoutes = Router();
+const userController = new UserController();
+
+userRoutes.post("/", userController.create);
+userRoutes.get("/", userController.index);
+userRoutes.patch("/:id", userController.update);
+userRoutes.put("/:id", userController.update);
+
+export { userRoutes };
+
+```
+
+## src\server.ts
+
+```ts
+import { app } from "@/app";
+
+const PORT = Number(process.env.PORT ?? 3333);
+
+app.listen(PORT, () => {
+  console.log(`WorldMix360 API rodando na porta: ${PORT}`);
+});
+
+```
+
+## src\services\mercado-livre-service.ts
+
+```ts
+import { randomBytes } from "node:crypto";
+import jwt from "jsonwebtoken";
+import { z } from "zod";
+import {
+  assertMercadoLivreConfig,
+  mercadoLivreConfig,
+} from "@/configs/mercado-livre";
+import { prisma } from "@/database/prisma";
+
+const tokenResponseSchema = z.object({
+  access_token: z.string(),
+  refresh_token: z.string(),
+  user_id: z.union([z.string(), z.number()]),
+  expires_in: z.number(),
+});
+
+const apiBaseUrl = "https://api.mercadolibre.com";
+
+function getStateToken() {
+  return jwt.sign(
+    { nonce: randomBytes(16).toString("hex") },
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "10m",
+    },
+  );
+}
+
+export function getMercadoLivreAuthorizationUrl() {
+  assertMercadoLivreConfig();
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: mercadoLivreConfig.clientId!,
+    redirect_uri: mercadoLivreConfig.redirectUri!,
+    state: getStateToken(),
+  });
+  return `https://auth.mercadolivre.com.br/authorization?${params}`;
+}
+
+export async function connectMercadoLivre(code: string, state: string) {
+  assertMercadoLivreConfig();
+  jwt.verify(state, process.env.JWT_SECRET!);
+
+  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: mercadoLivreConfig.clientId!,
+      client_secret: mercadoLivreConfig.clientSecret!,
+      code,
+      redirect_uri: mercadoLivreConfig.redirectUri!,
+    }),
+  });
+
+  if (!response.ok)
+    throw new Error(`Mercado Livre recusou a autorização (${response.status})`);
+  const token = tokenResponseSchema.parse(await response.json());
+  return saveConnection(token);
+}
+
+async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
+  return prisma.mercadoLivreConnection.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      sellerId: String(token.user_id),
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+    },
+    update: {
+      sellerId: String(token.user_id),
+      accessToken: token.access_token,
+      refreshToken: token.refresh_token,
+      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+    },
+  });
+}
+
+async function getAccessToken() {
+  const connection = await prisma.mercadoLivreConnection.findUnique({
+    where: { id: 1 },
+  });
+  if (!connection)
+    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  if (connection.expiresAt.getTime() > Date.now() + 60_000)
+    return connection.accessToken;
+
+  assertMercadoLivreConfig();
+  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: mercadoLivreConfig.clientId!,
+      client_secret: mercadoLivreConfig.clientSecret!,
+      refresh_token: connection.refreshToken,
+    }),
+  });
+  if (!response.ok)
+    throw new Error("Não foi possível renovar a autorização do Mercado Livre");
+  return (
+    await saveConnection(tokenResponseSchema.parse(await response.json()))
+  ).accessToken;
+}
+
+export async function getMercadoLivreProducts(search?: string) {
+  const connection = await prisma.mercadoLivreConnection.findUnique({
+    where: { id: 1 },
+  });
+  if (!connection)
+    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  const accessToken = await getAccessToken();
+  const params = new URLSearchParams({ status: "active", limit: "50" });
+  const idsResponse = await fetch(
+    `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  if (!idsResponse.ok)
+    throw new Error("Não foi possível buscar os produtos no Mercado Livre");
+  const ids = z
+    .object({ results: z.array(z.string()) })
+    .parse(await idsResponse.json()).results;
+  if (!ids.length) return [];
+
+  const detailsResponse = await fetch(
+    `${apiBaseUrl}/items?ids=${ids.join(",")}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+  if (!detailsResponse.ok)
+    throw new Error("Não foi possível carregar os detalhes dos produtos");
+  const details = z
+    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
+    .parse(await detailsResponse.json());
+  const normalizedSearch = search?.trim().toLocaleLowerCase();
+  return details
+    .map(({ body }) => body)
+    .filter(
+      (item) =>
+        !normalizedSearch ||
+        String(item.title).toLocaleLowerCase().includes(normalizedSearch),
+    )
+    .map((item) => ({
+      id: String(item.id),
+      title: String(item.title),
+      price: Number(item.price ?? 0),
+      imageUrl: String(item.thumbnail ?? ""),
+      affiliateUrl: String(item.permalink ?? "#"),
+      category: item.category_id ? String(item.category_id) : null,
+    }));
+}
+
+export async function syncMercadoLivreProducts() {
+  const products = await getMercadoLivreProducts();
+  const syncedAt = new Date();
+
+  await prisma.$transaction(
+    products.map((product) =>
+      prisma.product.upsert({
+        where: { id: product.id },
+        create: { ...product, available: true, syncedAt },
+        update: { ...product, available: true, syncedAt },
+      }),
+    ),
+  );
+
+  const productIds = products.map((product) => product.id);
+  await prisma.product.updateMany({
+    where: productIds.length ? { id: { notIn: productIds } } : {},
+    data: { available: false, syncedAt },
+  });
+
+  return prisma.product.findMany({
+    where: { available: true },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+```
+
+## src\types\aliases.d.ts
+
+```ts
+declare module "@/*";
+
+```
+
+## src\utils\AppError.ts
+
+```ts
+class AppError {
+  message: string;
+  statusCode: number;
+
+  constructor(message: string, statusCode: number = 400) {
+    this.message = message;
+    this.statusCode = statusCode;
+  }
+}
+
+export { AppError };
+
+```
+
+## tools\generate-md.ts
+
+```ts
+import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import { join, extname, dirname, resolve, relative, basename } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// raiz do projeto (um nível acima de tools)
+const projectPath = resolve(__dirname, "..");
+
+// pega o nome da pasta raiz (nome do projeto)
+const projectName = basename(projectPath);
+
+// gera o arquivo dentro de tools com o nome do projeto
+const outputFile = join(__dirname, `${projectName}.md`);
+
+const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const specialFiles = [
+  "Dockerfile",
+  "Makefile",
+  ".eslintrc",
+  ".prettierrc",
+  "vite.config.ts",
+  "vite.config.js",
+  "tailwind.config.js",
+  "postcss.config.js"
+];
+const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
+const excludeFiles = ["package-lock.json"];
+
+if (existsSync(outputFile)) unlinkSync(outputFile);
+
+function formatHeader(fullPath: string): string {
+  const rel = relative(projectPath, fullPath);
+  return `## ${rel}`;
+}
+
+function wrapContent(ext: string, content: string): string {
+  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
+  if (ext === ".md") return `\n${content}\n`;
+  if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
+  if (specialFiles.includes(ext)) return `\n\`\`\`\n${content}\n\`\`\`\n`;
+  return `\n${content}\n`;
+}
+
+function walk(dir: string): void {
+  for (const file of readdirSync(dir)) {
+    const fullPath = join(dir, file);
+    const stat = statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      if (!excludeDirs.includes(file)) walk(fullPath);
+    } else {
+      const ext = extname(file) || file;
+      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+        try {
+          const content = readFileSync(fullPath, "utf8");
+          appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
+          appendFileSync(outputFile, wrapContent(ext, content));
+        } catch (err) {
+          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+        }
+      }
+    }
+  }
+}
+
+console.log(`🔍 Gerando arquivo ${projectName}.md...`);
+walk(projectPath);
+console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
+
+```
+
+## tools\instrucoes.md
+
+📘 Guia de Uso — Script `generate-md.ts`
+
+Este utilitário percorre todo o projeto (backend ou frontend) e gera um arquivo `.md` com o conteúdo dos arquivos, formatado em Markdown e destacado por tipo de código.
+
+---
+
+## 🛠️ Estrutura do Projeto
+
+```
+meu-projeto/
+├─ backend/
+│   ├─ src/
+│   └─ tools/
+│       └─ generate-md.ts
+├─ frontend/
+│   ├─ src/
+│   └─ tools/
+│       └─ generate-md.ts
+├─ package.json
+└─ tsconfig.json
+---
+```
+
+## 📂 Script `generate-md.ts`
+
+Coloque este arquivo dentro da pasta `tools` de cada parte (backend e frontend):
+
+```ts
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
+import { join, extname, dirname, resolve, relative, basename } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// raiz do projeto (um nível acima da pasta tools)
+const projectPath = resolve(__dirname, "..");
+
+// nome da pasta raiz (ex: backend ou frontend)
+const projectName = basename(projectPath);
+
+// arquivo de saída dentro da pasta tools
+const outputFile = join(__dirname, `${projectName}.md`);
+
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
+const specialFiles = [
+  "Dockerfile",
+  "Makefile",
+  ".eslintrc",
+  ".prettierrc",
+  "vite.config.ts",
+  "vite.config.js",
+  "tailwind.config.js",
+  "postcss.config.js",
+];
+const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
+const excludeFiles = ["package-lock.json"];
+
+if (existsSync(outputFile)) unlinkSync(outputFile);
+
+function formatHeader(fullPath: string): string {
+  const rel = relative(projectPath, fullPath);
+  return `## ${rel}`;
+}
+
+function wrapContent(ext: string, content: string): string {
+  if ([".ts", ".tsx", ".js", ".jsx"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
+  if (ext === ".md") return `\n${content}\n`;
+  if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
+  if (ext === ".css") return `\n\`\`\`css\n${content}\n\`\`\`\n`;
+  if (specialFiles.includes(ext)) return `\n\`\`\`\n${content}\n\`\`\`\n`;
+  return `\n${content}\n`;
+}
+
+function walk(dir: string): void {
+  for (const file of readdirSync(dir)) {
+    const fullPath = join(dir, file);
+    const stat = statSync(fullPath);
+
+    if (stat.isDirectory()) {
+      if (!excludeDirs.includes(file)) walk(fullPath);
+    } else {
+      const ext = extname(file) || file;
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
+        try {
+          const content = readFileSync(fullPath, "utf8");
+          appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
+          appendFileSync(outputFile, wrapContent(ext, content));
+        } catch (err) {
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
+        }
+      }
+    }
+  }
+}
+
+console.log(`🔍 Gerando arquivo ${projectName}.md...`);
+walk(projectPath);
+console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
+```
+
+⚙️ Configuração do TypeScript
+
+- No tsconfig.json da raiz, adicione:
+
+```
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "ES2020",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": ["src", "tools"]
+}
+```
+
+📦 Dependências
+
+- Instale:
+
+```
+"scripts": {
+  "generate-md": "tsx tools/generate-md.ts"
+}
+
+```
+
+🚀 Como Rodar
+
+- No terminal, vá até a pasta desejada e rode:
+
+```
+npm run generate-md
+```
+
+
+
+## tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2023",
+
+    "rootDir": ".",
+    "outDir": "./dist",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "skipLibCheck": true,
+    "types": ["node", "express"],
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["src", "src/types", "env.ts"],
+  "exclude": ["node_modules", "dist"]
+}
+
+```
