@@ -1,18 +1,19 @@
-
 ## .env
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=public"
-
-JWT_SECRET=r0s3nd0
+JWT_SECRET=seu_jwt_secret_aqui
+DATABASE_URL=postgresql://usuario:senha@host:5432/database
+MELI_CLIENT_SECRET=seu_client_secret_aqui
+ACCESS_TOKEN=seu_access_token_aqui
+REFRESH_TOKEN=seu_refresh_token_aqui
 ```
 
 ## env.d.ts
 
 ```ts
 export declare const env: {
-    DATABASE_URL: string;
-    JWT_SECRET: string;
+  DATABASE_URL: string;
+  JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -29,7 +30,6 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
-
 ```
 
 ## env.ts
@@ -51,7 +51,6 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-
 ```
 
 ## package.json
@@ -99,7 +98,6 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
-
 ```
 
 ## prisma7.config.ts
@@ -117,7 +115,6 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
-
 ```
 
 ## README.md
@@ -184,7 +181,6 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
-
 ## skills-lock.json
 
 ```json
@@ -247,7 +243,6 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
-
 ```
 
 ## src\app.ts
@@ -275,7 +270,6 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
-
 ```
 
 ## src\configs\auth.ts
@@ -296,7 +290,6 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
-
 ```
 
 ## src\configs\mercado-livre.ts
@@ -323,7 +316,6 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
-
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -364,7 +356,6 @@ export class MercadoLivreController {
     });
   }
 }
-
 ```
 
 ## src\controllers\products-controller.ts
@@ -409,7 +400,6 @@ export class ProductsController {
     return response.json({ products, synced: products.length });
   }
 }
-
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -457,7 +447,6 @@ class SessionsController {
 }
 
 export { SessionsController };
-
 ```
 
 ## src\controllers\users-controllers.ts
@@ -572,7 +561,6 @@ class UserController {
 }
 
 export { UserController };
-
 ```
 
 ## src\database\prisma.ts
@@ -593,7 +581,6 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
-
 ```
 
 ## src\middleware\error-handling.ts
@@ -619,7 +606,6 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
-
 ```
 
 ## src\routes\index.ts
@@ -639,7 +625,6 @@ routes.use("/mercado-livre", mercadoLivreRoutes);
 routes.use("/products", productRoutes);
 
 export { routes };
-
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -656,7 +641,6 @@ mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
 mercadoLivreRoutes.get("/products", controller.products.bind(controller));
 
 export { mercadoLivreRoutes };
-
 ```
 
 ## src\routes\product-routes.ts
@@ -672,7 +656,6 @@ productRoutes.get("/", controller.index.bind(controller));
 productRoutes.post("/sync", controller.sync.bind(controller));
 
 export { productRoutes };
-
 ```
 
 ## src\routes\sessions-routes.ts
@@ -687,7 +670,6 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
-
 ```
 
 ## src\routes\user-routes.ts
@@ -705,7 +687,6 @@ userRoutes.patch("/:id", userController.update);
 userRoutes.put("/:id", userController.update);
 
 export { userRoutes };
-
 ```
 
 ## src\server.ts
@@ -718,7 +699,6 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
-
 ```
 
 ## src\services\mercado-livre-service.ts
@@ -906,14 +886,12 @@ export async function syncMercadoLivreProducts() {
     orderBy: { updatedAt: "desc" },
   });
 }
-
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
-
 ```
 
 ## src\utils\AppError.ts
@@ -930,13 +908,19 @@ class AppError {
 }
 
 export { AppError };
-
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -952,7 +936,16 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -961,7 +954,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js"
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -974,7 +967,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -991,13 +985,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -1007,7 +1008,6 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
-
 ```
 
 ## tools\instrucoes.md
@@ -1175,25 +1175,25 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
-
 
 ## tools\WorldMix360-API.md
 
-
 ## .env
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=public"
-
-JWT_SECRET=r0s3nd0
+JWT_SECRET=seu_jwt_secret_aqui
+DATABASE_URL=postgresql://usuario:senha@host:5432/database
+MELI_CLIENT_SECRET=seu_client_secret_aqui
+ACCESS_TOKEN=seu_access_token_aqui
+REFRESH_TOKEN=seu_refresh_token_aqui
 ```
 
 ## env.d.ts
 
 ```ts
 export declare const env: {
-    DATABASE_URL: string;
-    JWT_SECRET: string;
+  DATABASE_URL: string;
+  JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -1210,7 +1210,6 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
-
 ```
 
 ## env.ts
@@ -1232,7 +1231,6 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-
 ```
 
 ## package.json
@@ -1280,7 +1278,6 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
-
 ```
 
 ## prisma7.config.ts
@@ -1298,7 +1295,6 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
-
 ```
 
 ## README.md
@@ -1365,7 +1361,6 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
-
 ## skills-lock.json
 
 ```json
@@ -1428,7 +1423,6 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
-
 ```
 
 ## src\app.ts
@@ -1456,7 +1450,6 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
-
 ```
 
 ## src\configs\auth.ts
@@ -1477,7 +1470,6 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
-
 ```
 
 ## src\configs\mercado-livre.ts
@@ -1504,7 +1496,6 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
-
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -1545,7 +1536,6 @@ export class MercadoLivreController {
     });
   }
 }
-
 ```
 
 ## src\controllers\products-controller.ts
@@ -1590,7 +1580,6 @@ export class ProductsController {
     return response.json({ products, synced: products.length });
   }
 }
-
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -1638,7 +1627,6 @@ class SessionsController {
 }
 
 export { SessionsController };
-
 ```
 
 ## src\controllers\users-controllers.ts
@@ -1753,7 +1741,6 @@ class UserController {
 }
 
 export { UserController };
-
 ```
 
 ## src\database\prisma.ts
@@ -1774,7 +1761,6 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
-
 ```
 
 ## src\middleware\error-handling.ts
@@ -1800,7 +1786,6 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
-
 ```
 
 ## src\routes\index.ts
@@ -1820,7 +1805,6 @@ routes.use("/mercado-livre", mercadoLivreRoutes);
 routes.use("/products", productRoutes);
 
 export { routes };
-
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -1837,7 +1821,6 @@ mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
 mercadoLivreRoutes.get("/products", controller.products.bind(controller));
 
 export { mercadoLivreRoutes };
-
 ```
 
 ## src\routes\product-routes.ts
@@ -1853,7 +1836,6 @@ productRoutes.get("/", controller.index.bind(controller));
 productRoutes.post("/sync", controller.sync.bind(controller));
 
 export { productRoutes };
-
 ```
 
 ## src\routes\sessions-routes.ts
@@ -1868,7 +1850,6 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
-
 ```
 
 ## src\routes\user-routes.ts
@@ -1886,7 +1867,6 @@ userRoutes.patch("/:id", userController.update);
 userRoutes.put("/:id", userController.update);
 
 export { userRoutes };
-
 ```
 
 ## src\server.ts
@@ -1899,7 +1879,6 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
-
 ```
 
 ## src\services\mercado-livre-service.ts
@@ -2087,14 +2066,12 @@ export async function syncMercadoLivreProducts() {
     orderBy: { updatedAt: "desc" },
   });
 }
-
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
-
 ```
 
 ## src\utils\AppError.ts
@@ -2111,13 +2088,19 @@ class AppError {
 }
 
 export { AppError };
-
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -2133,7 +2116,16 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -2142,7 +2134,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js"
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -2155,7 +2147,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -2172,13 +2165,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -2188,7 +2188,6 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
-
 ```
 
 ## tools\instrucoes.md
@@ -2356,8 +2355,6 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
-
-
 
 ## tsconfig.json
 
@@ -2394,5 +2391,4 @@ npm run generate-md
   "include": ["src", "src/types", "env.ts"],
   "exclude": ["node_modules", "dist"]
 }
-
 ```
