@@ -1,6 +1,6 @@
 import { prisma } from "@/database/prisma";
 
-export const subcategoryService = {
+export const subcategoriesService = {
   async create(data: any) {
     return prisma.subcategory.create({ data });
   },
