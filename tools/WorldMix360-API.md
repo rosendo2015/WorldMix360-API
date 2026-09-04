@@ -1,13 +1,3 @@
-## .env
-
-```env
-JWT_SECRET=seu_jwt_secret_aqui
-DATABASE_URL=postgresql://usuario:senha@host:5432/database
-MELI_CLIENT_SECRET=seu_client_secret_aqui
-ACCESS_TOKEN=seu_access_token_aqui
-REFRESH_TOKEN=seu_refresh_token_aqui
-```
-
 ## env.d.ts
 
 ```ts
@@ -361,11 +351,84 @@ export class MercadoLivreController {
 ## src\controllers\products-controller.ts
 
 ```ts
+/* src/controllers/products-controller.ts */
+
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { mercadoLivreConfig } from "@/configs/mercado-livre";
+
 import { prisma } from "@/database/prisma";
 import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
+import { createSlug } from "@/utils/createSlug";
+
+const createProductSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().trim().optional(),
+  shortDescription: z.string().trim().optional(),
+
+  imageUrl: z.string().trim().url(),
+
+  price: z.coerce.number().nonnegative(),
+  originalPrice: z.coerce.number().nonnegative().optional(),
+
+  currency: z.string().trim().default("BRL"),
+
+  rating: z.coerce.number().min(0).max(5).optional(),
+  reviewsCount: z.coerce.number().int().nonnegative().default(0),
+
+  affiliateUrl: z.string().trim().url(),
+
+  category: z.string().trim().optional(),
+
+  featured: z.coerce.boolean().default(false),
+  available: z.coerce.boolean().default(true),
+  active: z.coerce.boolean().default(true),
+
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+});
+
+const updateProductSchema = z.object({
+  title: z.string().trim().min(1).optional(),
+  description: z.string().trim().optional(),
+  shortDescription: z.string().trim().optional(),
+
+  imageUrl: z.string().trim().url().optional(),
+
+  price: z.coerce.number().nonnegative().optional(),
+  originalPrice: z.coerce.number().nonnegative().optional(),
+
+  currency: z.string().trim().optional(),
+
+  rating: z.coerce.number().min(0).max(5).optional(),
+  reviewsCount: z.coerce.number().int().nonnegative().optional(),
+
+  affiliateUrl: z.string().trim().url().optional(),
+
+  category: z.string().trim().optional(),
+
+  featured: z.coerce.boolean().optional(),
+  available: z.coerce.boolean().optional(),
+  active: z.coerce.boolean().optional(),
+
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+});
+
+const updateProductStatusSchema = z
+  .object({
+    active: z.coerce.boolean().optional(),
+    available: z.coerce.boolean().optional(),
+    featured: z.coerce.boolean().optional(),
+  })
+  .refine(
+    (data) =>
+      data.active !== undefined ||
+      data.available !== undefined ||
+      data.featured !== undefined,
+    {
+      message: "Informe pelo menos um status para atualizar.",
+    },
+  );
 
 export class ProductsController {
   async index(request: Request, response: Response) {
@@ -376,28 +439,264 @@ export class ProductsController {
         featured: z.coerce.boolean().optional(),
       })
       .parse(request.query);
+
     const products = await prisma.product.findMany({
       where: {
         available: true,
         ...(query.category ? { category: query.category } : {}),
         ...(query.featured !== undefined ? { featured: query.featured } : {}),
         ...(query.search
-          ? { title: { contains: query.search, mode: "insensitive" } }
+          ? {
+              title: {
+                contains: query.search,
+                mode: "insensitive",
+              },
+            }
           : {}),
       },
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
     });
+
     return response.json({ products });
+  }
+
+  async create(request: Request, response: Response) {
+    const data = createProductSchema.parse(request.body);
+
+    const slug = createSlug(data.title);
+
+    const existingProduct = await prisma.product.findUnique({
+      where: {
+        slug,
+      },
+    });
+
+    if (existingProduct) {
+      return response.status(409).json({
+        message: "Já existe um produto com esse título.",
+      });
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        title: data.title,
+        slug,
+
+        description: data.description ?? null,
+        shortDescription: data.shortDescription ?? null,
+
+        imageUrl: data.imageUrl,
+
+        price: data.price,
+        originalPrice: data.originalPrice ?? null,
+
+        currency: data.currency,
+
+        rating: data.rating ?? null,
+        reviewsCount: data.reviewsCount,
+
+        affiliateUrl: data.affiliateUrl,
+
+        category: data.category ?? null,
+
+        featured: data.featured,
+        available: data.available,
+        active: data.active,
+
+        seoTitle: data.seoTitle ?? null,
+        seoDescription: data.seoDescription ?? null,
+      },
+    });
+
+    return response.status(201).json({
+      product,
+    });
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z
+      .object({
+        id: z.string().uuid(),
+      })
+      .parse(request.params);
+
+    const data = updateProductSchema.parse(request.body);
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: params.id,
+      },
+    });
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    let slug = product.slug;
+
+    if (data.title && data.title !== product.title) {
+      slug = createSlug(data.title);
+
+      const existingProduct = await prisma.product.findFirst({
+        where: {
+          slug,
+          id: {
+            not: product.id,
+          },
+        },
+      });
+
+      if (existingProduct) {
+        return response.status(409).json({
+          message: "Já existe um produto com esse título.",
+        });
+      }
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: {
+        id: product.id,
+      },
+
+      data: {
+        ...(data.title !== undefined
+          ? {
+              title: data.title,
+              slug,
+            }
+          : {}),
+
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+
+        ...(data.shortDescription !== undefined
+          ? { shortDescription: data.shortDescription }
+          : {}),
+
+        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
+
+        ...(data.price !== undefined ? { price: data.price } : {}),
+
+        ...(data.originalPrice !== undefined
+          ? { originalPrice: data.originalPrice }
+          : {}),
+
+        ...(data.currency !== undefined ? { currency: data.currency } : {}),
+
+        ...(data.rating !== undefined ? { rating: data.rating } : {}),
+
+        ...(data.reviewsCount !== undefined
+          ? { reviewsCount: data.reviewsCount }
+          : {}),
+
+        ...(data.affiliateUrl !== undefined
+          ? { affiliateUrl: data.affiliateUrl }
+          : {}),
+
+        ...(data.category !== undefined ? { category: data.category } : {}),
+
+        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+
+        ...(data.available !== undefined ? { available: data.available } : {}),
+
+        ...(data.active !== undefined ? { active: data.active } : {}),
+
+        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+        ...(data.seoDescription !== undefined
+          ? { seoDescription: data.seoDescription }
+          : {}),
+      },
+    });
+
+    return response.json({
+      product: updatedProduct,
+    });
+  }
+
+  async updateStatus(request: Request, response: Response) {
+    const params = z
+      .object({
+        id: z.string().uuid(),
+      })
+      .parse(request.params);
+
+    const data = updateProductStatusSchema.parse(request.body);
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: params.id,
+      },
+    });
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: {
+        id: product.id,
+      },
+
+      data: {
+        ...(data.active !== undefined ? { active: data.active } : {}),
+
+        ...(data.available !== undefined ? { available: data.available } : {}),
+
+        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+      },
+    });
+
+    return response.json({
+      product: updatedProduct,
+    });
   }
 
   async sync(request: Request, response: Response) {
     const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
     const receivedSecret = request.header("x-sync-token");
+
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({ message: "Não autorizado" });
+      return response.status(401).json({
+        message: "Não autorizado",
+      });
     }
+
     const products = await syncMercadoLivreProducts();
-    return response.json({ products, synced: products.length });
+
+    return response.json({
+      products,
+      synced: products.length,
+    });
+  }
+
+  async show(request: Request, response: Response) {
+    const params = z
+      .object({
+        slug: z.string().trim().min(1),
+      })
+      .parse(request.params);
+
+    const product = await prisma.product.findUnique({
+      where: {
+        slug: params.slug,
+      },
+    });
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    return response.json({
+      product,
+    });
   }
 }
 ```
@@ -493,10 +792,12 @@ class UserController {
       next();
     }
   }
+
   async index(request: Request, response: Response, next: NextFunction) {
     const users = await prisma.user.findMany();
     return response.json(users);
   }
+
   async update(request: Request, response: Response, next: NextFunction) {
     try {
       const paramsSchema = z.object({
@@ -583,6 +884,72 @@ export const prisma = new PrismaClient({
 });
 ```
 
+## src\middleware\ensure-admin.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+
+import { AppError } from "@/utils/AppError";
+
+export function ensureAdmin(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (request.user.role !== "admin") {
+    throw new AppError("Acesso permitido somente para administradores", 403);
+  }
+
+  return next();
+}
+```
+
+## src\middleware\ensure-authenticated.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import jwt from "jsonwebtoken";
+
+import { authConfig } from "@/configs/auth";
+import { AppError } from "@/utils/AppError";
+
+interface TokenPayload {
+  sub: string;
+  role: string;
+}
+
+export function ensureAuthenticated(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  const authHeader = request.headers.authorization;
+
+  if (!authHeader) {
+    throw new AppError("Token não informado", 401);
+  }
+
+  const [, token] = authHeader.split(" ");
+
+  if (!token) {
+    throw new AppError("Token inválido", 401);
+  }
+
+  try {
+    const decoded = jwt.verify(token, authConfig.jwt.secret) as TokenPayload;
+
+    request.user = {
+      id: decoded.sub,
+      role: decoded.role,
+    };
+
+    return next();
+  } catch {
+    throw new AppError("Token inválido ou expirado", 401);
+  }
+}
+```
+
 ## src\middleware\error-handling.ts
 
 ```ts
@@ -648,12 +1015,45 @@ export { mercadoLivreRoutes };
 ```ts
 import { Router } from "express";
 import { ProductsController } from "@/controllers/products-controller";
+import { ensureAdmin } from "@/middleware/ensure-admin";
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
 
 const productRoutes = Router();
+
 const controller = new ProductsController();
 
+// Públicas
 productRoutes.get("/", controller.index.bind(controller));
-productRoutes.post("/sync", controller.sync.bind(controller));
+productRoutes.get("/:slug", controller.show.bind(controller));
+
+// Administrativas
+productRoutes.post(
+  "/",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.create.bind(controller),
+);
+
+productRoutes.put(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.update.bind(controller),
+);
+
+productRoutes.patch(
+  "/:id/status",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.updateStatus.bind(controller),
+);
+
+productRoutes.post(
+  "/sync",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.sync.bind(controller),
+);
 
 export { productRoutes };
 ```
@@ -707,11 +1107,14 @@ app.listen(PORT, () => {
 import { randomBytes } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+
 import {
   assertMercadoLivreConfig,
   mercadoLivreConfig,
 } from "@/configs/mercado-livre";
+
 import { prisma } from "@/database/prisma";
+import { createSlug } from "@/utils/createSlug";
 
 const tokenResponseSchema = z.object({
   access_token: z.string(),
@@ -722,9 +1125,13 @@ const tokenResponseSchema = z.object({
 
 const apiBaseUrl = "https://api.mercadolibre.com";
 
+const MARKETPLACE = "MERCADOLIVRE";
+
 function getStateToken() {
   return jwt.sign(
-    { nonce: randomBytes(16).toString("hex") },
+    {
+      nonce: randomBytes(16).toString("hex"),
+    },
     process.env.JWT_SECRET!,
     {
       expiresIn: "10m",
@@ -734,22 +1141,27 @@ function getStateToken() {
 
 export function getMercadoLivreAuthorizationUrl() {
   assertMercadoLivreConfig();
+
   const params = new URLSearchParams({
     response_type: "code",
     client_id: mercadoLivreConfig.clientId!,
     redirect_uri: mercadoLivreConfig.redirectUri!,
     state: getStateToken(),
   });
+
   return `https://auth.mercadolivre.com.br/authorization?${params}`;
 }
 
 export async function connectMercadoLivre(code: string, state: string) {
   assertMercadoLivreConfig();
+
   jwt.verify(state, process.env.JWT_SECRET!);
 
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       client_id: mercadoLivreConfig.clientId!,
@@ -759,15 +1171,21 @@ export async function connectMercadoLivre(code: string, state: string) {
     }),
   });
 
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(`Mercado Livre recusou a autorização (${response.status})`);
+  }
+
   const token = tokenResponseSchema.parse(await response.json());
+
   return saveConnection(token);
 }
 
 async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
   return prisma.mercadoLivreConnection.upsert({
-    where: { id: 1 },
+    where: {
+      id: 1,
+    },
+
     create: {
       id: 1,
       sellerId: String(token.user_id),
@@ -775,6 +1193,7 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
       refreshToken: token.refresh_token,
       expiresAt: new Date(Date.now() + token.expires_in * 1000),
     },
+
     update: {
       sellerId: String(token.user_id),
       accessToken: token.access_token,
@@ -786,17 +1205,26 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
 
 async function getAccessToken() {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+    where: {
+      id: 1,
+    },
   });
-  if (!connection)
+
+  if (!connection) {
     throw new Error("A conta do Mercado Livre ainda não foi conectada");
-  if (connection.expiresAt.getTime() > Date.now() + 60_000)
+  }
+
+  if (connection.expiresAt.getTime() > Date.now() + 60_000) {
     return connection.accessToken;
+  }
 
   assertMercadoLivreConfig();
+
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: mercadoLivreConfig.clientId!,
@@ -804,46 +1232,80 @@ async function getAccessToken() {
       refresh_token: connection.refreshToken,
     }),
   });
-  if (!response.ok)
+
+  if (!response.ok) {
     throw new Error("Não foi possível renovar a autorização do Mercado Livre");
-  return (
-    await saveConnection(tokenResponseSchema.parse(await response.json()))
-  ).accessToken;
+  }
+
+  const token = tokenResponseSchema.parse(await response.json());
+
+  return (await saveConnection(token)).accessToken;
 }
 
 export async function getMercadoLivreProducts(search?: string) {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+    where: {
+      id: 1,
+    },
   });
-  if (!connection)
+
+  if (!connection) {
     throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  }
+
   const accessToken = await getAccessToken();
-  const params = new URLSearchParams({ status: "active", limit: "50" });
+
+  const params = new URLSearchParams({
+    status: "active",
+    limit: "50",
+  });
+
   const idsResponse = await fetch(
     `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
     {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     },
   );
-  if (!idsResponse.ok)
+
+  if (!idsResponse.ok) {
     throw new Error("Não foi possível buscar os produtos no Mercado Livre");
+  }
+
   const ids = z
-    .object({ results: z.array(z.string()) })
+    .object({
+      results: z.array(z.string()),
+    })
     .parse(await idsResponse.json()).results;
-  if (!ids.length) return [];
+
+  if (!ids.length) {
+    return [];
+  }
 
   const detailsResponse = await fetch(
     `${apiBaseUrl}/items?ids=${ids.join(",")}`,
     {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     },
   );
-  if (!detailsResponse.ok)
+
+  if (!detailsResponse.ok) {
     throw new Error("Não foi possível carregar os detalhes dos produtos");
+  }
+
   const details = z
-    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
+    .array(
+      z.object({
+        body: z.record(z.string(), z.unknown()),
+      }),
+    )
     .parse(await detailsResponse.json());
+
   const normalizedSearch = search?.trim().toLocaleLowerCase();
+
   return details
     .map(({ body }) => body)
     .filter(
@@ -851,39 +1313,108 @@ export async function getMercadoLivreProducts(search?: string) {
         !normalizedSearch ||
         String(item.title).toLocaleLowerCase().includes(normalizedSearch),
     )
-    .map((item) => ({
-      id: String(item.id),
-      title: String(item.title),
-      price: Number(item.price ?? 0),
-      imageUrl: String(item.thumbnail ?? ""),
-      affiliateUrl: String(item.permalink ?? "#"),
-      category: item.category_id ? String(item.category_id) : null,
-    }));
+    .map((item) => {
+      const externalId = String(item.id);
+      const title = String(item.title);
+
+      const currency = item.currency_id ? String(item.currency_id) : "BRL";
+
+      const price = Number(item.price ?? 0);
+
+      const imageUrl = String(item.thumbnail ?? "");
+
+      const affiliateUrl = String(item.permalink ?? "#");
+
+      const category = item.category_id ? String(item.category_id) : null;
+
+      const slug = createSlug(title, externalId);
+
+      return {
+        externalId,
+        marketplace: MARKETPLACE,
+
+        title,
+        slug,
+
+        description: null,
+        shortDescription: null,
+
+        imageUrl,
+
+        price,
+        originalPrice: null,
+
+        currency,
+
+        rating: null,
+        reviewsCount: 0,
+
+        affiliateUrl,
+
+        category,
+      };
+    });
 }
 
 export async function syncMercadoLivreProducts() {
   const products = await getMercadoLivreProducts();
+
   const syncedAt = new Date();
 
   await prisma.$transaction(
     products.map((product) =>
       prisma.product.upsert({
-        where: { id: product.id },
-        create: { ...product, available: true, syncedAt },
-        update: { ...product, available: true, syncedAt },
+        where: {
+          externalId_marketplace: {
+            externalId: product.externalId,
+            marketplace: product.marketplace,
+          },
+        },
+
+        create: {
+          ...product,
+          available: true,
+          syncedAt,
+        },
+
+        update: {
+          ...product,
+          available: true,
+          syncedAt,
+        },
       }),
     ),
   );
 
-  const productIds = products.map((product) => product.id);
+  const externalIds = products.map((product) => product.externalId);
+
   await prisma.product.updateMany({
-    where: productIds.length ? { id: { notIn: productIds } } : {},
-    data: { available: false, syncedAt },
+    where: externalIds.length
+      ? {
+          marketplace: MARKETPLACE,
+          externalId: {
+            notIn: externalIds,
+          },
+        }
+      : {
+          marketplace: MARKETPLACE,
+        },
+
+    data: {
+      available: false,
+      syncedAt,
+    },
   });
 
   return prisma.product.findMany({
-    where: { available: true },
-    orderBy: { updatedAt: "desc" },
+    where: {
+      marketplace: MARKETPLACE,
+      available: true,
+    },
+
+    orderBy: {
+      updatedAt: "desc",
+    },
   });
 }
 ```
@@ -892,6 +1423,19 @@ export async function syncMercadoLivreProducts() {
 
 ```ts
 declare module "@/*";
+```
+
+## src\types\express\index.d.ts
+
+```ts
+declare namespace Express {
+  export interface Request {
+    user: {
+      id: string;
+      role: string;
+    };
+  }
+}
 ```
 
 ## src\utils\AppError.ts
@@ -908,6 +1452,26 @@ class AppError {
 }
 
 export { AppError };
+```
+
+## src\utils\createSlug.ts
+
+```ts
+export function createSlug(value: string, suffix?: string) {
+  const slug = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!suffix) {
+    return slug;
+  }
+
+  return `${slug}-${suffix}`;
+}
 ```
 
 ## tools\generate-md.ts
@@ -1181,11 +1745,11 @@ npm run generate-md
 ## .env
 
 ```env
-JWT_SECRET=seu_jwt_secret_aqui
-DATABASE_URL=postgresql://usuario:senha@host:5432/database
-MELI_CLIENT_SECRET=seu_client_secret_aqui
-ACCESS_TOKEN=seu_access_token_aqui
-REFRESH_TOKEN=seu_refresh_token_aqui
+DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=public"
+
+JWT_SECRET=r0s3nd0
+
+PRODUCT_SYNC_SECRET=3ee7524986e159cb3c02a833149821f25ede1614dc0944ded3451cd550c04550
 ```
 
 ## env.d.ts
@@ -1541,11 +2105,84 @@ export class MercadoLivreController {
 ## src\controllers\products-controller.ts
 
 ```ts
+/* src/controllers/products-controller.ts */
+
 import type { Request, Response } from "express";
 import { z } from "zod";
-import { mercadoLivreConfig } from "@/configs/mercado-livre";
+
 import { prisma } from "@/database/prisma";
 import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
+import { createSlug } from "@/utils/createSlug";
+
+const createProductSchema = z.object({
+  title: z.string().trim().min(1),
+  description: z.string().trim().optional(),
+  shortDescription: z.string().trim().optional(),
+
+  imageUrl: z.string().trim().url(),
+
+  price: z.coerce.number().nonnegative(),
+  originalPrice: z.coerce.number().nonnegative().optional(),
+
+  currency: z.string().trim().default("BRL"),
+
+  rating: z.coerce.number().min(0).max(5).optional(),
+  reviewsCount: z.coerce.number().int().nonnegative().default(0),
+
+  affiliateUrl: z.string().trim().url(),
+
+  category: z.string().trim().optional(),
+
+  featured: z.coerce.boolean().default(false),
+  available: z.coerce.boolean().default(true),
+  active: z.coerce.boolean().default(true),
+
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+});
+
+const updateProductSchema = z.object({
+  title: z.string().trim().min(1).optional(),
+  description: z.string().trim().optional(),
+  shortDescription: z.string().trim().optional(),
+
+  imageUrl: z.string().trim().url().optional(),
+
+  price: z.coerce.number().nonnegative().optional(),
+  originalPrice: z.coerce.number().nonnegative().optional(),
+
+  currency: z.string().trim().optional(),
+
+  rating: z.coerce.number().min(0).max(5).optional(),
+  reviewsCount: z.coerce.number().int().nonnegative().optional(),
+
+  affiliateUrl: z.string().trim().url().optional(),
+
+  category: z.string().trim().optional(),
+
+  featured: z.coerce.boolean().optional(),
+  available: z.coerce.boolean().optional(),
+  active: z.coerce.boolean().optional(),
+
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+});
+
+const updateProductStatusSchema = z
+  .object({
+    active: z.coerce.boolean().optional(),
+    available: z.coerce.boolean().optional(),
+    featured: z.coerce.boolean().optional(),
+  })
+  .refine(
+    (data) =>
+      data.active !== undefined ||
+      data.available !== undefined ||
+      data.featured !== undefined,
+    {
+      message: "Informe pelo menos um status para atualizar.",
+    },
+  );
 
 export class ProductsController {
   async index(request: Request, response: Response) {
@@ -1556,28 +2193,264 @@ export class ProductsController {
         featured: z.coerce.boolean().optional(),
       })
       .parse(request.query);
+
     const products = await prisma.product.findMany({
       where: {
         available: true,
         ...(query.category ? { category: query.category } : {}),
         ...(query.featured !== undefined ? { featured: query.featured } : {}),
         ...(query.search
-          ? { title: { contains: query.search, mode: "insensitive" } }
+          ? {
+              title: {
+                contains: query.search,
+                mode: "insensitive",
+              },
+            }
           : {}),
       },
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
     });
+
     return response.json({ products });
+  }
+
+  async create(request: Request, response: Response) {
+    const data = createProductSchema.parse(request.body);
+
+    const slug = createSlug(data.title);
+
+    const existingProduct = await prisma.product.findUnique({
+      where: {
+        slug,
+      },
+    });
+
+    if (existingProduct) {
+      return response.status(409).json({
+        message: "Já existe um produto com esse título.",
+      });
+    }
+
+    const product = await prisma.product.create({
+      data: {
+        title: data.title,
+        slug,
+
+        description: data.description ?? null,
+        shortDescription: data.shortDescription ?? null,
+
+        imageUrl: data.imageUrl,
+
+        price: data.price,
+        originalPrice: data.originalPrice ?? null,
+
+        currency: data.currency,
+
+        rating: data.rating ?? null,
+        reviewsCount: data.reviewsCount,
+
+        affiliateUrl: data.affiliateUrl,
+
+        category: data.category ?? null,
+
+        featured: data.featured,
+        available: data.available,
+        active: data.active,
+
+        seoTitle: data.seoTitle ?? null,
+        seoDescription: data.seoDescription ?? null,
+      },
+    });
+
+    return response.status(201).json({
+      product,
+    });
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z
+      .object({
+        id: z.string().uuid(),
+      })
+      .parse(request.params);
+
+    const data = updateProductSchema.parse(request.body);
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: params.id,
+      },
+    });
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    let slug = product.slug;
+
+    if (data.title && data.title !== product.title) {
+      slug = createSlug(data.title);
+
+      const existingProduct = await prisma.product.findFirst({
+        where: {
+          slug,
+          id: {
+            not: product.id,
+          },
+        },
+      });
+
+      if (existingProduct) {
+        return response.status(409).json({
+          message: "Já existe um produto com esse título.",
+        });
+      }
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: {
+        id: product.id,
+      },
+
+      data: {
+        ...(data.title !== undefined
+          ? {
+              title: data.title,
+              slug,
+            }
+          : {}),
+
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+
+        ...(data.shortDescription !== undefined
+          ? { shortDescription: data.shortDescription }
+          : {}),
+
+        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
+
+        ...(data.price !== undefined ? { price: data.price } : {}),
+
+        ...(data.originalPrice !== undefined
+          ? { originalPrice: data.originalPrice }
+          : {}),
+
+        ...(data.currency !== undefined ? { currency: data.currency } : {}),
+
+        ...(data.rating !== undefined ? { rating: data.rating } : {}),
+
+        ...(data.reviewsCount !== undefined
+          ? { reviewsCount: data.reviewsCount }
+          : {}),
+
+        ...(data.affiliateUrl !== undefined
+          ? { affiliateUrl: data.affiliateUrl }
+          : {}),
+
+        ...(data.category !== undefined ? { category: data.category } : {}),
+
+        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+
+        ...(data.available !== undefined ? { available: data.available } : {}),
+
+        ...(data.active !== undefined ? { active: data.active } : {}),
+
+        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+        ...(data.seoDescription !== undefined
+          ? { seoDescription: data.seoDescription }
+          : {}),
+      },
+    });
+
+    return response.json({
+      product: updatedProduct,
+    });
+  }
+
+  async updateStatus(request: Request, response: Response) {
+    const params = z
+      .object({
+        id: z.string().uuid(),
+      })
+      .parse(request.params);
+
+    const data = updateProductStatusSchema.parse(request.body);
+
+    const product = await prisma.product.findUnique({
+      where: {
+        id: params.id,
+      },
+    });
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    const updatedProduct = await prisma.product.update({
+      where: {
+        id: product.id,
+      },
+
+      data: {
+        ...(data.active !== undefined ? { active: data.active } : {}),
+
+        ...(data.available !== undefined ? { available: data.available } : {}),
+
+        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+      },
+    });
+
+    return response.json({
+      product: updatedProduct,
+    });
   }
 
   async sync(request: Request, response: Response) {
     const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
     const receivedSecret = request.header("x-sync-token");
+
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({ message: "Não autorizado" });
+      return response.status(401).json({
+        message: "Não autorizado",
+      });
     }
+
     const products = await syncMercadoLivreProducts();
-    return response.json({ products, synced: products.length });
+
+    return response.json({
+      products,
+      synced: products.length,
+    });
+  }
+
+  async show(request: Request, response: Response) {
+    const params = z
+      .object({
+        slug: z.string().trim().min(1),
+      })
+      .parse(request.params);
+
+    const product = await prisma.product.findUnique({
+      where: {
+        slug: params.slug,
+      },
+    });
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    return response.json({
+      product,
+    });
   }
 }
 ```
@@ -1673,10 +2546,12 @@ class UserController {
       next();
     }
   }
+
   async index(request: Request, response: Response, next: NextFunction) {
     const users = await prisma.user.findMany();
     return response.json(users);
   }
+
   async update(request: Request, response: Response, next: NextFunction) {
     try {
       const paramsSchema = z.object({
@@ -1763,6 +2638,72 @@ export const prisma = new PrismaClient({
 });
 ```
 
+## src\middleware\ensure-admin.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+
+import { AppError } from "@/utils/AppError";
+
+export function ensureAdmin(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  if (request.user.role !== "admin") {
+    throw new AppError("Acesso permitido somente para administradores", 403);
+  }
+
+  return next();
+}
+```
+
+## src\middleware\ensure-authenticated.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import jwt from "jsonwebtoken";
+
+import { authConfig } from "@/configs/auth";
+import { AppError } from "@/utils/AppError";
+
+interface TokenPayload {
+  sub: string;
+  role: string;
+}
+
+export function ensureAuthenticated(
+  request: Request,
+  response: Response,
+  next: NextFunction,
+) {
+  const authHeader = request.headers.authorization;
+
+  if (!authHeader) {
+    throw new AppError("Token não informado", 401);
+  }
+
+  const [, token] = authHeader.split(" ");
+
+  if (!token) {
+    throw new AppError("Token inválido", 401);
+  }
+
+  try {
+    const decoded = jwt.verify(token, authConfig.jwt.secret) as TokenPayload;
+
+    request.user = {
+      id: decoded.sub,
+      role: decoded.role,
+    };
+
+    return next();
+  } catch {
+    throw new AppError("Token inválido ou expirado", 401);
+  }
+}
+```
+
 ## src\middleware\error-handling.ts
 
 ```ts
@@ -1828,12 +2769,45 @@ export { mercadoLivreRoutes };
 ```ts
 import { Router } from "express";
 import { ProductsController } from "@/controllers/products-controller";
+import { ensureAdmin } from "@/middleware/ensure-admin";
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
 
 const productRoutes = Router();
+
 const controller = new ProductsController();
 
+// Públicas
 productRoutes.get("/", controller.index.bind(controller));
-productRoutes.post("/sync", controller.sync.bind(controller));
+productRoutes.get("/:slug", controller.show.bind(controller));
+
+// Administrativas
+productRoutes.post(
+  "/",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.create.bind(controller),
+);
+
+productRoutes.put(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.update.bind(controller),
+);
+
+productRoutes.patch(
+  "/:id/status",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.updateStatus.bind(controller),
+);
+
+productRoutes.post(
+  "/sync",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.sync.bind(controller),
+);
 
 export { productRoutes };
 ```
@@ -1887,11 +2861,14 @@ app.listen(PORT, () => {
 import { randomBytes } from "node:crypto";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+
 import {
   assertMercadoLivreConfig,
   mercadoLivreConfig,
 } from "@/configs/mercado-livre";
+
 import { prisma } from "@/database/prisma";
+import { createSlug } from "@/utils/createSlug";
 
 const tokenResponseSchema = z.object({
   access_token: z.string(),
@@ -1902,9 +2879,13 @@ const tokenResponseSchema = z.object({
 
 const apiBaseUrl = "https://api.mercadolibre.com";
 
+const MARKETPLACE = "MERCADOLIVRE";
+
 function getStateToken() {
   return jwt.sign(
-    { nonce: randomBytes(16).toString("hex") },
+    {
+      nonce: randomBytes(16).toString("hex"),
+    },
     process.env.JWT_SECRET!,
     {
       expiresIn: "10m",
@@ -1914,22 +2895,27 @@ function getStateToken() {
 
 export function getMercadoLivreAuthorizationUrl() {
   assertMercadoLivreConfig();
+
   const params = new URLSearchParams({
     response_type: "code",
     client_id: mercadoLivreConfig.clientId!,
     redirect_uri: mercadoLivreConfig.redirectUri!,
     state: getStateToken(),
   });
+
   return `https://auth.mercadolivre.com.br/authorization?${params}`;
 }
 
 export async function connectMercadoLivre(code: string, state: string) {
   assertMercadoLivreConfig();
+
   jwt.verify(state, process.env.JWT_SECRET!);
 
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       client_id: mercadoLivreConfig.clientId!,
@@ -1939,15 +2925,21 @@ export async function connectMercadoLivre(code: string, state: string) {
     }),
   });
 
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(`Mercado Livre recusou a autorização (${response.status})`);
+  }
+
   const token = tokenResponseSchema.parse(await response.json());
+
   return saveConnection(token);
 }
 
 async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
   return prisma.mercadoLivreConnection.upsert({
-    where: { id: 1 },
+    where: {
+      id: 1,
+    },
+
     create: {
       id: 1,
       sellerId: String(token.user_id),
@@ -1955,6 +2947,7 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
       refreshToken: token.refresh_token,
       expiresAt: new Date(Date.now() + token.expires_in * 1000),
     },
+
     update: {
       sellerId: String(token.user_id),
       accessToken: token.access_token,
@@ -1966,17 +2959,26 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
 
 async function getAccessToken() {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+    where: {
+      id: 1,
+    },
   });
-  if (!connection)
+
+  if (!connection) {
     throw new Error("A conta do Mercado Livre ainda não foi conectada");
-  if (connection.expiresAt.getTime() > Date.now() + 60_000)
+  }
+
+  if (connection.expiresAt.getTime() > Date.now() + 60_000) {
     return connection.accessToken;
+  }
 
   assertMercadoLivreConfig();
+
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: mercadoLivreConfig.clientId!,
@@ -1984,46 +2986,80 @@ async function getAccessToken() {
       refresh_token: connection.refreshToken,
     }),
   });
-  if (!response.ok)
+
+  if (!response.ok) {
     throw new Error("Não foi possível renovar a autorização do Mercado Livre");
-  return (
-    await saveConnection(tokenResponseSchema.parse(await response.json()))
-  ).accessToken;
+  }
+
+  const token = tokenResponseSchema.parse(await response.json());
+
+  return (await saveConnection(token)).accessToken;
 }
 
 export async function getMercadoLivreProducts(search?: string) {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+    where: {
+      id: 1,
+    },
   });
-  if (!connection)
+
+  if (!connection) {
     throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  }
+
   const accessToken = await getAccessToken();
-  const params = new URLSearchParams({ status: "active", limit: "50" });
+
+  const params = new URLSearchParams({
+    status: "active",
+    limit: "50",
+  });
+
   const idsResponse = await fetch(
     `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
     {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     },
   );
-  if (!idsResponse.ok)
+
+  if (!idsResponse.ok) {
     throw new Error("Não foi possível buscar os produtos no Mercado Livre");
+  }
+
   const ids = z
-    .object({ results: z.array(z.string()) })
+    .object({
+      results: z.array(z.string()),
+    })
     .parse(await idsResponse.json()).results;
-  if (!ids.length) return [];
+
+  if (!ids.length) {
+    return [];
+  }
 
   const detailsResponse = await fetch(
     `${apiBaseUrl}/items?ids=${ids.join(",")}`,
     {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
     },
   );
-  if (!detailsResponse.ok)
+
+  if (!detailsResponse.ok) {
     throw new Error("Não foi possível carregar os detalhes dos produtos");
+  }
+
   const details = z
-    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
+    .array(
+      z.object({
+        body: z.record(z.string(), z.unknown()),
+      }),
+    )
     .parse(await detailsResponse.json());
+
   const normalizedSearch = search?.trim().toLocaleLowerCase();
+
   return details
     .map(({ body }) => body)
     .filter(
@@ -2031,39 +3067,108 @@ export async function getMercadoLivreProducts(search?: string) {
         !normalizedSearch ||
         String(item.title).toLocaleLowerCase().includes(normalizedSearch),
     )
-    .map((item) => ({
-      id: String(item.id),
-      title: String(item.title),
-      price: Number(item.price ?? 0),
-      imageUrl: String(item.thumbnail ?? ""),
-      affiliateUrl: String(item.permalink ?? "#"),
-      category: item.category_id ? String(item.category_id) : null,
-    }));
+    .map((item) => {
+      const externalId = String(item.id);
+      const title = String(item.title);
+
+      const currency = item.currency_id ? String(item.currency_id) : "BRL";
+
+      const price = Number(item.price ?? 0);
+
+      const imageUrl = String(item.thumbnail ?? "");
+
+      const affiliateUrl = String(item.permalink ?? "#");
+
+      const category = item.category_id ? String(item.category_id) : null;
+
+      const slug = createSlug(title, externalId);
+
+      return {
+        externalId,
+        marketplace: MARKETPLACE,
+
+        title,
+        slug,
+
+        description: null,
+        shortDescription: null,
+
+        imageUrl,
+
+        price,
+        originalPrice: null,
+
+        currency,
+
+        rating: null,
+        reviewsCount: 0,
+
+        affiliateUrl,
+
+        category,
+      };
+    });
 }
 
 export async function syncMercadoLivreProducts() {
   const products = await getMercadoLivreProducts();
+
   const syncedAt = new Date();
 
   await prisma.$transaction(
     products.map((product) =>
       prisma.product.upsert({
-        where: { id: product.id },
-        create: { ...product, available: true, syncedAt },
-        update: { ...product, available: true, syncedAt },
+        where: {
+          externalId_marketplace: {
+            externalId: product.externalId,
+            marketplace: product.marketplace,
+          },
+        },
+
+        create: {
+          ...product,
+          available: true,
+          syncedAt,
+        },
+
+        update: {
+          ...product,
+          available: true,
+          syncedAt,
+        },
       }),
     ),
   );
 
-  const productIds = products.map((product) => product.id);
+  const externalIds = products.map((product) => product.externalId);
+
   await prisma.product.updateMany({
-    where: productIds.length ? { id: { notIn: productIds } } : {},
-    data: { available: false, syncedAt },
+    where: externalIds.length
+      ? {
+          marketplace: MARKETPLACE,
+          externalId: {
+            notIn: externalIds,
+          },
+        }
+      : {
+          marketplace: MARKETPLACE,
+        },
+
+    data: {
+      available: false,
+      syncedAt,
+    },
   });
 
   return prisma.product.findMany({
-    where: { available: true },
-    orderBy: { updatedAt: "desc" },
+    where: {
+      marketplace: MARKETPLACE,
+      available: true,
+    },
+
+    orderBy: {
+      updatedAt: "desc",
+    },
   });
 }
 ```
@@ -2072,6 +3177,19 @@ export async function syncMercadoLivreProducts() {
 
 ```ts
 declare module "@/*";
+```
+
+## src\types\express\index.d.ts
+
+```ts
+declare namespace Express {
+  export interface Request {
+    user: {
+      id: string;
+      role: string;
+    };
+  }
+}
 ```
 
 ## src\utils\AppError.ts
@@ -2088,6 +3206,26 @@ class AppError {
 }
 
 export { AppError };
+```
+
+## src\utils\createSlug.ts
+
+```ts
+export function createSlug(value: string, suffix?: string) {
+  const slug = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!suffix) {
+    return slug;
+  }
+
+  return `${slug}-${suffix}`;
+}
 ```
 
 ## tools\generate-md.ts
