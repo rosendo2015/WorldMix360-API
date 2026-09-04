@@ -39,10 +39,12 @@ class UserController {
       next();
     }
   }
+
   async index(request: Request, response: Response, next: NextFunction) {
     const users = await prisma.user.findMany();
     return response.json(users);
   }
+
   async update(request: Request, response: Response, next: NextFunction) {
     try {
       const paramsSchema = z.object({
