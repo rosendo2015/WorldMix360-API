@@ -1,43 +1,44 @@
 import { Router } from "express";
+
 import { ProductsController } from "@/controllers/products-controller";
 import { ensureAdmin } from "@/middleware/ensure-admin";
 import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
 
 const productRoutes = Router();
 
-const controller = new ProductsController();
+const productsController = new ProductsController();
 
 // Públicas
-productRoutes.get("/", controller.index.bind(controller));
-productRoutes.get("/:slug", controller.show.bind(controller));
+productRoutes.get("/", productsController.index);
+productRoutes.get("/:slug", productsController.show);
 
 // Administrativas
 productRoutes.post(
   "/",
   ensureAuthenticated,
   ensureAdmin,
-  controller.create.bind(controller),
+  productsController.create,
 );
 
 productRoutes.put(
   "/:id",
   ensureAuthenticated,
   ensureAdmin,
-  controller.update.bind(controller),
+  productsController.update,
 );
 
 productRoutes.patch(
   "/:id/status",
   ensureAuthenticated,
   ensureAdmin,
-  controller.updateStatus.bind(controller),
+  productsController.updateStatus,
 );
 
 productRoutes.post(
   "/sync",
   ensureAuthenticated,
   ensureAdmin,
-  controller.sync.bind(controller),
+  productsController.sync,
 );
 
 export { productRoutes };

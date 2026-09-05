@@ -1,10 +1,9 @@
-/* src/controllers/products-controller.ts */
-
 import type { Request, Response } from "express";
 import { z } from "zod";
 
-import { prisma } from "@/database/prisma";
 import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
+import { productsService } from "@/services/products-service";
+
 import { createSlug } from "@/utils/createSlug";
 
 const createProductSchema = z.object({
@@ -24,7 +23,6 @@ const createProductSchema = z.object({
 
   affiliateUrl: z.string().trim().url(),
 
-  // relações obrigatórias
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
 
@@ -53,7 +51,6 @@ const updateProductSchema = z.object({
 
   affiliateUrl: z.string().trim().url().optional(),
 
-  // relações opcionais no update
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
 
@@ -81,6 +78,14 @@ const updateProductStatusSchema = z
     },
   );
 
+const idSchema = z.object({
+  id: z.string().uuid(),
+});
+
+const slugSchema = z.object({
+  slug: z.string().trim().min(1),
+});
+
 export class ProductsController {
   async index(request: Request, response: Response) {
     const query = z
@@ -92,25 +97,11 @@ export class ProductsController {
       })
       .parse(request.query);
 
-    const products = await prisma.product.findMany({
-      where: {
-        available: true,
-        ...(query.subcategoryId ? { subcategoryId: query.subcategoryId } : {}),
-        ...(query.marketplaceId ? { marketplaceId: query.marketplaceId } : {}),
-        ...(query.featured !== undefined ? { featured: query.featured } : {}),
-        ...(query.search
-          ? {
-              title: {
-                contains: query.search,
-                mode: "insensitive",
-              },
-            }
-          : {}),
-      },
-      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
-    });
+    const products = await productsService.list(query);
 
-    return response.json({ products });
+    return response.json({
+      products,
+    });
   }
 
   async create(request: Request, response: Response) {
@@ -118,9 +109,7 @@ export class ProductsController {
 
     const slug = createSlug(data.title);
 
-    const existingProduct = await prisma.product.findUnique({
-      where: { slug },
-    });
+    const existingProduct = await productsService.findBySlug(slug);
 
     if (existingProduct) {
       return response.status(409).json({
@@ -128,126 +117,66 @@ export class ProductsController {
       });
     }
 
-    const product = await prisma.product.create({
-      data: {
-        title: data.title,
-        slug,
-        description: data.description ?? null,
-        shortDescription: data.shortDescription ?? null,
-        imageUrl: data.imageUrl,
-        price: data.price,
-        originalPrice: data.originalPrice ?? null,
-        currency: data.currency,
-        rating: data.rating ?? null,
-        reviewsCount: data.reviewsCount,
-        affiliateUrl: data.affiliateUrl,
-        featured: data.featured,
-        available: data.available,
-        active: data.active,
-        seoTitle: data.seoTitle ?? null,
-        seoDescription: data.seoDescription ?? null,
+    const product = await productsService.create(data);
 
-        // relações obrigatórias
-        subcategory: { connect: { id: data.subcategoryId } },
-        marketplace: { connect: { id: data.marketplaceId } },
-      },
+    return response.status(201).json({
+      product,
     });
-
-    return response.status(201).json({ product });
   }
 
   async update(request: Request, response: Response) {
-    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = idSchema.parse(request.params);
+
     const data = updateProductSchema.parse(request.body);
 
-    const product = await prisma.product.findUnique({
-      where: { id: params.id },
-    });
+    const product = await productsService.findById(id);
 
     if (!product) {
-      return response.status(404).json({ message: "Produto não encontrado" });
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
     }
 
-    let slug = product.slug;
-
     if (data.title && data.title !== product.title) {
-      slug = createSlug(data.title);
+      const slug = createSlug(data.title);
 
-      const existingProduct = await prisma.product.findFirst({
-        where: { slug, id: { not: product.id } },
-      });
+      const existingProduct = await productsService.findBySlugExceptId(
+        slug,
+        product.id,
+      );
 
       if (existingProduct) {
-        return response
-          .status(409)
-          .json({ message: "Já existe um produto com esse título." });
+        return response.status(409).json({
+          message: "Já existe um produto com esse título.",
+        });
       }
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        ...(data.title !== undefined ? { title: data.title, slug } : {}),
-        ...(data.description !== undefined
-          ? { description: data.description }
-          : {}),
-        ...(data.shortDescription !== undefined
-          ? { shortDescription: data.shortDescription }
-          : {}),
-        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
-        ...(data.price !== undefined ? { price: data.price } : {}),
-        ...(data.originalPrice !== undefined
-          ? { originalPrice: data.originalPrice }
-          : {}),
-        ...(data.currency !== undefined ? { currency: data.currency } : {}),
-        ...(data.rating !== undefined ? { rating: data.rating } : {}),
-        ...(data.reviewsCount !== undefined
-          ? { reviewsCount: data.reviewsCount }
-          : {}),
-        ...(data.affiliateUrl !== undefined
-          ? { affiliateUrl: data.affiliateUrl }
-          : {}),
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
-        ...(data.available !== undefined ? { available: data.available } : {}),
-        ...(data.active !== undefined ? { active: data.active } : {}),
-        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
-        ...(data.seoDescription !== undefined
-          ? { seoDescription: data.seoDescription }
-          : {}),
-        ...(data.subcategoryId
-          ? { subcategory: { connect: { id: data.subcategoryId } } }
-          : {}),
-        ...(data.marketplaceId
-          ? { marketplace: { connect: { id: data.marketplaceId } } }
-          : {}),
-      },
-    });
+    const updatedProduct = await productsService.update(product.id, data);
 
-    return response.json({ product: updatedProduct });
+    return response.json({
+      product: updatedProduct,
+    });
   }
 
   async updateStatus(request: Request, response: Response) {
-    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = idSchema.parse(request.params);
+
     const data = updateProductStatusSchema.parse(request.body);
 
-    const product = await prisma.product.findUnique({
-      where: { id: params.id },
-    });
+    const product = await productsService.findById(id);
 
     if (!product) {
-      return response.status(404).json({ message: "Produto não encontrado" });
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        ...(data.active !== undefined ? { active: data.active } : {}),
-        ...(data.available !== undefined ? { available: data.available } : {}),
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
-      },
-    });
+    const updatedProduct = await productsService.updateStatus(product.id, data);
 
-    return response.json({ product: updatedProduct });
+    return response.json({
+      product: updatedProduct,
+    });
   }
 
   async sync(request: Request, response: Response) {
@@ -255,25 +184,28 @@ export class ProductsController {
     const receivedSecret = request.header("x-sync-token");
 
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({ message: "Não autorizado" });
+      return response.status(401).json({
+        message: "Não autorizado",
+      });
     }
 
     const products = await syncMercadoLivreProducts();
 
-    return response.json({ products, synced: products.length });
+    return response.json({
+      products,
+      synced: products.length,
+    });
   }
 
   async show(request: Request, response: Response) {
-    const params = z
-      .object({ slug: z.string().trim().min(1) })
-      .parse(request.params);
+    const { slug } = slugSchema.parse(request.params);
 
-    const product = await prisma.product.findUnique({
-      where: { slug: params.slug },
-    });
+    const product = await productsService.findBySlug(slug);
 
     if (!product) {
-      return response.status(404).json({ message: "Produto não encontrado" });
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
     }
 
     return response.json({

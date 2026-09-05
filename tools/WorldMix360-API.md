@@ -1,3 +1,13 @@
+## .env
+
+```env
+DATABASE_URL="****"
+
+JWT_SECRET=****
+
+PRODUCT_SYNC_SECRET=******
+```
+
 ## env.d.ts
 
 ```ts
@@ -308,6 +318,287 @@ export function assertMercadoLivreConfig() {
 }
 ```
 
+## src\controllers\categories-controllers.ts
+
+```ts
+// src/controllers/category-controller.ts
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "@/database/prisma";
+import { categoryService } from "../services/categories-service";
+import { createSlug } from "../utils/createSlug";
+
+interface IdParams {
+  id: string;
+}
+
+export const categorySchema = z.object({
+  name: z
+    .string()
+    .min(2, "O nome da categoria deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  image: z.string().url("Imagem deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const createCategorySchema = z.object({
+  name: z
+    .string()
+    .min(2, "O nome da categoria deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  image: z.string().url("Imagem deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const updateCategorySchema = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().optional(),
+  image: z.string().url().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export class CategoryController {
+  async create(request: Request, response: Response) {
+    const data = createCategorySchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingCategory = await prisma.category.findUnique({
+      where: { slug },
+    });
+
+    if (existingCategory) {
+      return response
+        .status(409)
+        .json({ message: "Já existe uma categoria com esse nome." });
+    }
+
+    const category = await prisma.category.create({
+      data: {
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        image: data.image ?? null,
+      },
+    });
+
+    return response.status(201).json({ category });
+  }
+
+  async list(req: Request, res: Response) {
+    const categories = await categoryService.list();
+    res.json(categories);
+  }
+
+  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      const category = await categoryService.get(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Categoria não encontrada" });
+      }
+      res.json(category);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const data = updateCategorySchema.parse(request.body);
+
+    const category = await prisma.category.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!category) {
+      return response.status(404).json({ message: "Categoria não encontrada" });
+    }
+
+    let slug = category.slug;
+
+    if (data.name && data.name !== category.name) {
+      slug = createSlug(data.name);
+
+      const existingCategory = await prisma.category.findFirst({
+        where: { slug, id: { not: category.id } },
+      });
+
+      if (existingCategory) {
+        return response
+          .status(409)
+          .json({ message: "Já existe uma categoria com esse nome." });
+      }
+    }
+
+    const updatedCategory = await prisma.category.update({
+      where: { id: category.id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name, slug } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.image !== undefined ? { image: data.image } : {}),
+      },
+    });
+
+    return response.json({ category: updatedCategory });
+  }
+
+  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      await categoryService.delete(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+```
+
+## src\controllers\marketplace-controller.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "@/database/prisma";
+import { marketplaceService } from "../services/marketplace-service";
+import { createSlug } from "../utils/createSlug";
+
+interface IdParams {
+  id: string;
+}
+
+const createMarketplaceSchema = z.object({
+  name: z
+    .string()
+    .min(2, "O nome do marketplace deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  websiteUrl: z.string().url("Website deve ser uma URL válida").optional(),
+  logoUrl: z.string().url("Logo deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const updateMarketplaceSchema = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().optional(),
+  websiteUrl: z.string().url().optional(),
+  logoUrl: z.string().url().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export class MarketplaceController {
+  async create(request: Request, response: Response) {
+    const data = createMarketplaceSchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingMarketplace = await prisma.marketplace.findUnique({
+      where: { slug },
+    });
+
+    if (existingMarketplace) {
+      return response
+        .status(409)
+        .json({ message: "Já existe um marketplace com esse nome." });
+    }
+
+    const marketplace = await prisma.marketplace.create({
+      data: {
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        websiteUrl: data.websiteUrl ?? null,
+        logoUrl: data.logoUrl ?? null,
+        active: data.active,
+        sortOrder: data.sortOrder,
+      },
+    });
+
+    return response.status(201).json({ marketplace });
+  }
+
+  async list(req: Request, res: Response) {
+    const marketplaces = await marketplaceService.list();
+    res.json(marketplaces);
+  }
+
+  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      const marketplace = await marketplaceService.get(req.params.id);
+      if (!marketplace) {
+        return res.status(404).json({ error: "Marketplace não encontrado" });
+      }
+      res.json(marketplace);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const data = updateMarketplaceSchema.parse(request.body);
+
+    const marketplace = await prisma.marketplace.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!marketplace) {
+      return response
+        .status(404)
+        .json({ message: "Marketplace não encontrado" });
+    }
+
+    let slug = marketplace.slug;
+
+    if (data.name && data.name !== marketplace.name) {
+      slug = createSlug(data.name);
+
+      const existingMarketplace = await prisma.marketplace.findFirst({
+        where: { slug, id: { not: marketplace.id } },
+      });
+
+      if (existingMarketplace) {
+        return response
+          .status(409)
+          .json({ message: "Já existe um marketplace com esse nome." });
+      }
+    }
+
+    const updatedMarketplace = await prisma.marketplace.update({
+      where: { id: marketplace.id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name, slug } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.websiteUrl !== undefined
+          ? { websiteUrl: data.websiteUrl }
+          : {}),
+        ...(data.logoUrl !== undefined ? { logoUrl: data.logoUrl } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+      },
+    });
+
+    return response.json({ marketplace: updatedMarketplace });
+  }
+
+  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      await marketplaceService.delete(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+```
+
 ## src\controllers\mercado-livre-controller.ts
 
 ```ts
@@ -377,7 +668,9 @@ const createProductSchema = z.object({
 
   affiliateUrl: z.string().trim().url(),
 
-  category: z.string().trim().optional(),
+  // relações obrigatórias
+  subcategoryId: z.string().uuid("ID da subcategoria inválido"),
+  marketplaceId: z.string().uuid("ID do marketplace inválido"),
 
   featured: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
@@ -404,7 +697,9 @@ const updateProductSchema = z.object({
 
   affiliateUrl: z.string().trim().url().optional(),
 
-  category: z.string().trim().optional(),
+  // relações opcionais no update
+  subcategoryId: z.string().uuid().optional(),
+  marketplaceId: z.string().uuid().optional(),
 
   featured: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
@@ -435,7 +730,8 @@ export class ProductsController {
     const query = z
       .object({
         search: z.string().trim().optional(),
-        category: z.string().trim().optional(),
+        subcategoryId: z.string().uuid().optional(),
+        marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
       })
       .parse(request.query);
@@ -443,7 +739,8 @@ export class ProductsController {
     const products = await prisma.product.findMany({
       where: {
         available: true,
-        ...(query.category ? { category: query.category } : {}),
+        ...(query.subcategoryId ? { subcategoryId: query.subcategoryId } : {}),
+        ...(query.marketplaceId ? { marketplaceId: query.marketplaceId } : {}),
         ...(query.featured !== undefined ? { featured: query.featured } : {}),
         ...(query.search
           ? {
@@ -466,9 +763,7 @@ export class ProductsController {
     const slug = createSlug(data.title);
 
     const existingProduct = await prisma.product.findUnique({
-      where: {
-        slug,
-      },
+      where: { slug },
     });
 
     if (existingProduct) {
@@ -481,57 +776,40 @@ export class ProductsController {
       data: {
         title: data.title,
         slug,
-
         description: data.description ?? null,
         shortDescription: data.shortDescription ?? null,
-
         imageUrl: data.imageUrl,
-
         price: data.price,
         originalPrice: data.originalPrice ?? null,
-
         currency: data.currency,
-
         rating: data.rating ?? null,
         reviewsCount: data.reviewsCount,
-
         affiliateUrl: data.affiliateUrl,
-
-        category: data.category ?? null,
-
         featured: data.featured,
         available: data.available,
         active: data.active,
-
         seoTitle: data.seoTitle ?? null,
         seoDescription: data.seoDescription ?? null,
+
+        // relações obrigatórias
+        subcategory: { connect: { id: data.subcategoryId } },
+        marketplace: { connect: { id: data.marketplaceId } },
       },
     });
 
-    return response.status(201).json({
-      product,
-    });
+    return response.status(201).json({ product });
   }
 
   async update(request: Request, response: Response) {
-    const params = z
-      .object({
-        id: z.string().uuid(),
-      })
-      .parse(request.params);
-
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const data = updateProductSchema.parse(request.body);
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: params.id,
-      },
+      where: { id: params.id },
     });
 
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
 
     let slug = product.slug;
@@ -540,121 +818,80 @@ export class ProductsController {
       slug = createSlug(data.title);
 
       const existingProduct = await prisma.product.findFirst({
-        where: {
-          slug,
-          id: {
-            not: product.id,
-          },
-        },
+        where: { slug, id: { not: product.id } },
       });
 
       if (existingProduct) {
-        return response.status(409).json({
-          message: "Já existe um produto com esse título.",
-        });
+        return response
+          .status(409)
+          .json({ message: "Já existe um produto com esse título." });
       }
     }
 
     const updatedProduct = await prisma.product.update({
-      where: {
-        id: product.id,
-      },
-
+      where: { id: product.id },
       data: {
-        ...(data.title !== undefined
-          ? {
-              title: data.title,
-              slug,
-            }
-          : {}),
-
+        ...(data.title !== undefined ? { title: data.title, slug } : {}),
         ...(data.description !== undefined
           ? { description: data.description }
           : {}),
-
         ...(data.shortDescription !== undefined
           ? { shortDescription: data.shortDescription }
           : {}),
-
         ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
-
         ...(data.price !== undefined ? { price: data.price } : {}),
-
         ...(data.originalPrice !== undefined
           ? { originalPrice: data.originalPrice }
           : {}),
-
         ...(data.currency !== undefined ? { currency: data.currency } : {}),
-
         ...(data.rating !== undefined ? { rating: data.rating } : {}),
-
         ...(data.reviewsCount !== undefined
           ? { reviewsCount: data.reviewsCount }
           : {}),
-
         ...(data.affiliateUrl !== undefined
           ? { affiliateUrl: data.affiliateUrl }
           : {}),
-
-        ...(data.category !== undefined ? { category: data.category } : {}),
-
         ...(data.featured !== undefined ? { featured: data.featured } : {}),
-
         ...(data.available !== undefined ? { available: data.available } : {}),
-
         ...(data.active !== undefined ? { active: data.active } : {}),
-
         ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
-
         ...(data.seoDescription !== undefined
           ? { seoDescription: data.seoDescription }
+          : {}),
+        ...(data.subcategoryId
+          ? { subcategory: { connect: { id: data.subcategoryId } } }
+          : {}),
+        ...(data.marketplaceId
+          ? { marketplace: { connect: { id: data.marketplaceId } } }
           : {}),
       },
     });
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async updateStatus(request: Request, response: Response) {
-    const params = z
-      .object({
-        id: z.string().uuid(),
-      })
-      .parse(request.params);
-
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const data = updateProductStatusSchema.parse(request.body);
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: params.id,
-      },
+      where: { id: params.id },
     });
 
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
 
     const updatedProduct = await prisma.product.update({
-      where: {
-        id: product.id,
-      },
-
+      where: { id: product.id },
       data: {
         ...(data.active !== undefined ? { active: data.active } : {}),
-
         ...(data.available !== undefined ? { available: data.available } : {}),
-
         ...(data.featured !== undefined ? { featured: data.featured } : {}),
       },
     });
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async sync(request: Request, response: Response) {
@@ -662,36 +899,25 @@ export class ProductsController {
     const receivedSecret = request.header("x-sync-token");
 
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({
-        message: "Não autorizado",
-      });
+      return response.status(401).json({ message: "Não autorizado" });
     }
 
     const products = await syncMercadoLivreProducts();
 
-    return response.json({
-      products,
-      synced: products.length,
-    });
+    return response.json({ products, synced: products.length });
   }
 
   async show(request: Request, response: Response) {
     const params = z
-      .object({
-        slug: z.string().trim().min(1),
-      })
+      .object({ slug: z.string().trim().min(1) })
       .parse(request.params);
 
     const product = await prisma.product.findUnique({
-      where: {
-        slug: params.slug,
-      },
+      where: { slug: params.slug },
     });
 
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
 
     return response.json({
@@ -746,6 +972,148 @@ class SessionsController {
 }
 
 export { SessionsController };
+```
+
+## src\controllers\subcategories-controller.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "@/database/prisma";
+import { subcategoriesService } from "../services/subcategories-services";
+import { createSlug } from "../utils/createSlug";
+
+interface IdParams {
+  id: string;
+}
+
+const createSubcategorySchema = z.object({
+  categoryId: z.string().uuid(),
+  name: z
+    .string()
+    .min(2, "O nome da subcategoria deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  image: z.string().url("Imagem deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const updateSubcategorySchema = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().optional(),
+  image: z.string().url().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export class SubcategoriesController {
+  async create(request: Request, response: Response) {
+    const data = createSubcategorySchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingSubcategory = await prisma.subcategory.findUnique({
+      where: {
+        categoryId_slug: {
+          categoryId: data.categoryId,
+          slug,
+        },
+      },
+    });
+
+    if (existingSubcategory) {
+      return response
+        .status(409)
+        .json({ message: "Já existe uma subcategoria com esse nome." });
+    }
+
+    const subcategory = await prisma.subcategory.create({
+      data: {
+        categoryId: data.categoryId,
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        image: data.image ?? null,
+        active: data.active,
+        sortOrder: data.sortOrder,
+      },
+    });
+
+    return response.status(201).json({ subcategory });
+  }
+
+  async list(req: Request, res: Response) {
+    const subcategories = await subcategoriesService.list();
+    res.json(subcategories);
+  }
+
+  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      const subcategory = await subcategoriesService.get(req.params.id);
+      if (!subcategory) {
+        return res.status(404).json({ error: "Subcategoria não encontrada" });
+      }
+      res.json(subcategory);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const data = updateSubcategorySchema.parse(request.body);
+
+    const subcategory = await prisma.subcategory.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!subcategory) {
+      return response
+        .status(404)
+        .json({ message: "Subcategoria não encontrada" });
+    }
+
+    let slug = subcategory.slug;
+
+    if (data.name && data.name !== subcategory.name) {
+      slug = createSlug(data.name);
+
+      const existingSubcategory = await prisma.subcategory.findFirst({
+        where: { slug, id: { not: subcategory.id } },
+      });
+
+      if (existingSubcategory) {
+        return response
+          .status(409)
+          .json({ message: "Já existe uma subcategoria com esse nome." });
+      }
+    }
+
+    const updatedSubcategory = await prisma.subcategory.update({
+      where: { id: subcategory.id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name, slug } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.image !== undefined ? { image: data.image } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+      },
+    });
+
+    return response.json({ subcategory: updatedSubcategory });
+  }
+
+  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      await subcategoriesService.delete(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
 ```
 
 ## src\controllers\users-controllers.ts
@@ -953,6 +1321,7 @@ export function ensureAuthenticated(
 ## src\middleware\error-handling.ts
 
 ```ts
+/*src/middleware/error-handling*/
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { AppError } from "../utils/AppError.js";
@@ -975,13 +1344,36 @@ export function errorHandling(
 }
 ```
 
+## src\routes\categories-routes.ts
+
+```ts
+// src/routes/category-routes.ts
+import { Router } from "express";
+import { CategoryController } from "../controllers/categories-controllers";
+
+const categoriesRouter = Router();
+const categoryController = new CategoryController();
+
+categoriesRouter.post("/", categoryController.create);
+categoriesRouter.get("/", categoryController.list);
+categoriesRouter.get("/:id", categoryController.get);
+categoriesRouter.put("/:id", categoryController.update);
+categoriesRouter.delete("/:id", categoryController.delete);
+
+export { categoriesRouter as categoriesRoutes };
+```
+
 ## src\routes\index.ts
 
 ```ts
+/* src/routes/index.ts */
 import { Router } from "express";
+import { categoriesRoutes } from "./categories-routes";
+import { marketplaceRoutes } from "./marketplace-routes";
 import { mercadoLivreRoutes } from "./mercado-livre-routes";
 import { productRoutes } from "./product-routes";
 import { sessionsRoutes } from "./sessions-routes";
+import { subcategoriesRoutes } from "./subcategories-routes";
 import { userRoutes } from "./user-routes";
 
 const routes = Router();
@@ -990,8 +1382,29 @@ routes.use("/users", userRoutes);
 routes.use("/session", sessionsRoutes);
 routes.use("/mercado-livre", mercadoLivreRoutes);
 routes.use("/products", productRoutes);
+routes.use("/categories", categoriesRoutes);
+routes.use("/subcategories", subcategoriesRoutes);
+routes.use("/marketplaces", marketplaceRoutes);
 
 export { routes };
+```
+
+## src\routes\marketplace-routes.ts
+
+```ts
+import { Router } from "express";
+import { MarketplaceController } from "../controllers/marketplace-controller";
+
+const marketplaceRouter = Router();
+const marketplaceController = new MarketplaceController();
+
+marketplaceRouter.post("/", marketplaceController.create);
+marketplaceRouter.get("/", marketplaceController.list);
+marketplaceRouter.get("/:id", marketplaceController.get);
+marketplaceRouter.put("/:id", marketplaceController.update);
+marketplaceRouter.delete("/:id", marketplaceController.delete);
+
+export { marketplaceRouter as marketplaceRoutes };
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -1072,6 +1485,24 @@ sessionsRoutes.post("/", sessionsController.create);
 export { sessionsRoutes };
 ```
 
+## src\routes\subcategories-routes.ts
+
+```ts
+import { Router } from "express";
+import { SubcategoriesController } from "../controllers/subcategories-controller";
+
+const subcategoriesRouter = Router();
+const subcategoriesController = new SubcategoriesController();
+
+subcategoriesRouter.post("/", subcategoriesController.create);
+subcategoriesRouter.get("/", subcategoriesController.list);
+subcategoriesRouter.get("/:id", subcategoriesController.get);
+subcategoriesRouter.put("/:id", subcategoriesController.update);
+subcategoriesRouter.delete("/:id", subcategoriesController.delete);
+
+export { subcategoriesRouter as subcategoriesRoutes };
+```
+
 ## src\routes\user-routes.ts
 
 ```ts
@@ -1101,6 +1532,71 @@ app.listen(PORT, () => {
 });
 ```
 
+## src\services\categories-service.ts
+
+```ts
+// src/services/category-service.ts
+import { prisma } from "@/database/prisma";
+
+export const categoryService = {
+  async create(data: any) {
+    return prisma.category.create({ data });
+  },
+
+  async list() {
+    return prisma.category.findMany({ include: { subcategories: true } });
+  },
+
+  async get(id: string) {
+    return prisma.category.findUnique({
+      where: { id },
+      include: { subcategories: true },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.category.update({ where: { id }, data });
+  },
+
+  async delete(id: string) {
+    return prisma.category.delete({ where: { id } });
+  },
+};
+```
+
+## src\services\marketplace-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+export const marketplaceService = {
+  async create(data: any) {
+    return prisma.marketplace.create({ data });
+  },
+
+  async list() {
+    return prisma.marketplace.findMany({
+      include: { products: true },
+    });
+  },
+
+  async get(id: string) {
+    return prisma.marketplace.findUnique({
+      where: { id },
+      include: { products: true },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.marketplace.update({ where: { id }, data });
+  },
+
+  async delete(id: string) {
+    return prisma.marketplace.delete({ where: { id } });
+  },
+};
+```
+
 ## src\services\mercado-livre-service.ts
 
 ```ts
@@ -1125,17 +1621,14 @@ const tokenResponseSchema = z.object({
 
 const apiBaseUrl = "https://api.mercadolibre.com";
 
-const MARKETPLACE = "MERCADOLIVRE";
+// id do marketplace cadastrado no banco
+const MARKETPLACE_ID = "MERCADOLIVRE";
 
 function getStateToken() {
   return jwt.sign(
-    {
-      nonce: randomBytes(16).toString("hex"),
-    },
+    { nonce: randomBytes(16).toString("hex") },
     process.env.JWT_SECRET!,
-    {
-      expiresIn: "10m",
-    },
+    { expiresIn: "10m" },
   );
 }
 
@@ -1154,14 +1647,11 @@ export function getMercadoLivreAuthorizationUrl() {
 
 export async function connectMercadoLivre(code: string, state: string) {
   assertMercadoLivreConfig();
-
   jwt.verify(state, process.env.JWT_SECRET!);
 
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       client_id: mercadoLivreConfig.clientId!,
@@ -1176,16 +1666,12 @@ export async function connectMercadoLivre(code: string, state: string) {
   }
 
   const token = tokenResponseSchema.parse(await response.json());
-
   return saveConnection(token);
 }
 
 async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
   return prisma.mercadoLivreConnection.upsert({
-    where: {
-      id: 1,
-    },
-
+    where: { id: 1 },
     create: {
       id: 1,
       sellerId: String(token.user_id),
@@ -1193,7 +1679,6 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
       refreshToken: token.refresh_token,
       expiresAt: new Date(Date.now() + token.expires_in * 1000),
     },
-
     update: {
       sellerId: String(token.user_id),
       accessToken: token.access_token,
@@ -1205,9 +1690,7 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
 
 async function getAccessToken() {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: {
-      id: 1,
-    },
+    where: { id: 1 },
   });
 
   if (!connection) {
@@ -1222,9 +1705,7 @@ async function getAccessToken() {
 
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: mercadoLivreConfig.clientId!,
@@ -1238,15 +1719,12 @@ async function getAccessToken() {
   }
 
   const token = tokenResponseSchema.parse(await response.json());
-
   return (await saveConnection(token)).accessToken;
 }
 
 export async function getMercadoLivreProducts(search?: string) {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: {
-      id: 1,
-    },
+    where: { id: 1 },
   });
 
   if (!connection) {
@@ -1255,18 +1733,11 @@ export async function getMercadoLivreProducts(search?: string) {
 
   const accessToken = await getAccessToken();
 
-  const params = new URLSearchParams({
-    status: "active",
-    limit: "50",
-  });
+  const params = new URLSearchParams({ status: "active", limit: "50" });
 
   const idsResponse = await fetch(
     `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
   if (!idsResponse.ok) {
@@ -1274,21 +1745,15 @@ export async function getMercadoLivreProducts(search?: string) {
   }
 
   const ids = z
-    .object({
-      results: z.array(z.string()),
-    })
+    .object({ results: z.array(z.string()) })
     .parse(await idsResponse.json()).results;
 
-  if (!ids.length) {
-    return [];
-  }
+  if (!ids.length) return [];
 
   const detailsResponse = await fetch(
     `${apiBaseUrl}/items?ids=${ids.join(",")}`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { Authorization: `Bearer ${accessToken}` },
     },
   );
 
@@ -1297,11 +1762,7 @@ export async function getMercadoLivreProducts(search?: string) {
   }
 
   const details = z
-    .array(
-      z.object({
-        body: z.record(z.string(), z.unknown()),
-      }),
-    )
+    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
     .parse(await detailsResponse.json());
 
   const normalizedSearch = search?.trim().toLocaleLowerCase();
@@ -1316,107 +1777,140 @@ export async function getMercadoLivreProducts(search?: string) {
     .map((item) => {
       const externalId = String(item.id);
       const title = String(item.title);
-
       const currency = item.currency_id ? String(item.currency_id) : "BRL";
-
       const price = Number(item.price ?? 0);
-
       const imageUrl = String(item.thumbnail ?? "");
-
       const affiliateUrl = String(item.permalink ?? "#");
-
-      const category = item.category_id ? String(item.category_id) : null;
-
       const slug = createSlug(title, externalId);
 
       return {
         externalId,
-        marketplace: MARKETPLACE,
-
         title,
         slug,
-
         description: null,
         shortDescription: null,
-
         imageUrl,
-
         price,
         originalPrice: null,
-
         currency,
-
         rating: null,
         reviewsCount: 0,
-
         affiliateUrl,
+        available: true,
+        syncedAt: new Date(),
 
-        category,
+        // relações obrigatórias
+        subcategoryId: "UUID-DA-SUBCATEGORY", // ajustar conforme sua lógica
+        marketplaceId: MARKETPLACE_ID,
       };
     });
 }
 
 export async function syncMercadoLivreProducts() {
   const products = await getMercadoLivreProducts();
-
   const syncedAt = new Date();
 
   await prisma.$transaction(
     products.map((product) =>
       prisma.product.upsert({
         where: {
-          externalId_marketplace: {
+          externalId_marketplaceId: {
             externalId: product.externalId,
-            marketplace: product.marketplace,
+            marketplaceId: product.marketplaceId,
           },
         },
-
         create: {
-          ...product,
+          externalId: product.externalId,
+          title: product.title,
+          slug: product.slug,
+          description: product.description,
+          shortDescription: product.shortDescription,
+          imageUrl: product.imageUrl,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          currency: product.currency,
+          rating: product.rating,
+          reviewsCount: product.reviewsCount,
+          affiliateUrl: product.affiliateUrl,
           available: true,
           syncedAt,
-        },
 
+          // apenas IDs escalares
+          subcategoryId: product.subcategoryId,
+          marketplaceId: product.marketplaceId,
+        },
         update: {
-          ...product,
+          title: product.title,
+          slug: product.slug,
+          description: product.description,
+          shortDescription: product.shortDescription,
+          imageUrl: product.imageUrl,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          currency: product.currency,
+          rating: product.rating,
+          reviewsCount: product.reviewsCount,
+          affiliateUrl: product.affiliateUrl,
           available: true,
           syncedAt,
+
+          subcategoryId: product.subcategoryId,
+          marketplaceId: product.marketplaceId,
         },
       }),
     ),
   );
 
-  const externalIds = products.map((product) => product.externalId);
+  const externalIds = products.map((p) => p.externalId);
 
   await prisma.product.updateMany({
     where: externalIds.length
       ? {
-          marketplace: MARKETPLACE,
-          externalId: {
-            notIn: externalIds,
-          },
+          marketplaceId: MARKETPLACE_ID,
+          externalId: { notIn: externalIds },
         }
-      : {
-          marketplace: MARKETPLACE,
-        },
-
-    data: {
-      available: false,
-      syncedAt,
-    },
+      : { marketplaceId: MARKETPLACE_ID },
+    data: { available: false, syncedAt },
   });
 
   return prisma.product.findMany({
-    where: {
-      marketplace: MARKETPLACE,
-      available: true,
-    },
-
-    orderBy: {
-      updatedAt: "desc",
-    },
+    where: { marketplaceId: MARKETPLACE_ID, available: true },
+    orderBy: { updatedAt: "desc" },
   });
 }
+```
+
+## src\services\subcategories-services.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+export const subcategoriesService = {
+  async create(data: any) {
+    return prisma.subcategory.create({ data });
+  },
+
+  async list() {
+    return prisma.subcategory.findMany({
+      include: { category: true, products: true },
+    });
+  },
+
+  async get(id: string) {
+    return prisma.subcategory.findUnique({
+      where: { id },
+      include: { category: true, products: true },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.subcategory.update({ where: { id }, data });
+  },
+
+  async delete(id: string) {
+    return prisma.subcategory.delete({ where: { id } });
+  },
+};
 ```
 
 ## src\types\aliases.d.ts
@@ -2062,6 +2556,287 @@ export function assertMercadoLivreConfig() {
 }
 ```
 
+## src\controllers\categories-controllers.ts
+
+```ts
+// src/controllers/category-controller.ts
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "@/database/prisma";
+import { categoryService } from "../services/categories-service";
+import { createSlug } from "../utils/createSlug";
+
+interface IdParams {
+  id: string;
+}
+
+export const categorySchema = z.object({
+  name: z
+    .string()
+    .min(2, "O nome da categoria deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  image: z.string().url("Imagem deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const createCategorySchema = z.object({
+  name: z
+    .string()
+    .min(2, "O nome da categoria deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  image: z.string().url("Imagem deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const updateCategorySchema = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().optional(),
+  image: z.string().url().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export class CategoryController {
+  async create(request: Request, response: Response) {
+    const data = createCategorySchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingCategory = await prisma.category.findUnique({
+      where: { slug },
+    });
+
+    if (existingCategory) {
+      return response
+        .status(409)
+        .json({ message: "Já existe uma categoria com esse nome." });
+    }
+
+    const category = await prisma.category.create({
+      data: {
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        image: data.image ?? null,
+      },
+    });
+
+    return response.status(201).json({ category });
+  }
+
+  async list(req: Request, res: Response) {
+    const categories = await categoryService.list();
+    res.json(categories);
+  }
+
+  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      const category = await categoryService.get(req.params.id);
+      if (!category) {
+        return res.status(404).json({ error: "Categoria não encontrada" });
+      }
+      res.json(category);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const data = updateCategorySchema.parse(request.body);
+
+    const category = await prisma.category.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!category) {
+      return response.status(404).json({ message: "Categoria não encontrada" });
+    }
+
+    let slug = category.slug;
+
+    if (data.name && data.name !== category.name) {
+      slug = createSlug(data.name);
+
+      const existingCategory = await prisma.category.findFirst({
+        where: { slug, id: { not: category.id } },
+      });
+
+      if (existingCategory) {
+        return response
+          .status(409)
+          .json({ message: "Já existe uma categoria com esse nome." });
+      }
+    }
+
+    const updatedCategory = await prisma.category.update({
+      where: { id: category.id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name, slug } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.image !== undefined ? { image: data.image } : {}),
+      },
+    });
+
+    return response.json({ category: updatedCategory });
+  }
+
+  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      await categoryService.delete(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+```
+
+## src\controllers\marketplace-controller.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "@/database/prisma";
+import { marketplaceService } from "../services/marketplace-service";
+import { createSlug } from "../utils/createSlug";
+
+interface IdParams {
+  id: string;
+}
+
+const createMarketplaceSchema = z.object({
+  name: z
+    .string()
+    .min(2, "O nome do marketplace deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  websiteUrl: z.string().url("Website deve ser uma URL válida").optional(),
+  logoUrl: z.string().url("Logo deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const updateMarketplaceSchema = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().optional(),
+  websiteUrl: z.string().url().optional(),
+  logoUrl: z.string().url().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export class MarketplaceController {
+  async create(request: Request, response: Response) {
+    const data = createMarketplaceSchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingMarketplace = await prisma.marketplace.findUnique({
+      where: { slug },
+    });
+
+    if (existingMarketplace) {
+      return response
+        .status(409)
+        .json({ message: "Já existe um marketplace com esse nome." });
+    }
+
+    const marketplace = await prisma.marketplace.create({
+      data: {
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        websiteUrl: data.websiteUrl ?? null,
+        logoUrl: data.logoUrl ?? null,
+        active: data.active,
+        sortOrder: data.sortOrder,
+      },
+    });
+
+    return response.status(201).json({ marketplace });
+  }
+
+  async list(req: Request, res: Response) {
+    const marketplaces = await marketplaceService.list();
+    res.json(marketplaces);
+  }
+
+  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      const marketplace = await marketplaceService.get(req.params.id);
+      if (!marketplace) {
+        return res.status(404).json({ error: "Marketplace não encontrado" });
+      }
+      res.json(marketplace);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const data = updateMarketplaceSchema.parse(request.body);
+
+    const marketplace = await prisma.marketplace.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!marketplace) {
+      return response
+        .status(404)
+        .json({ message: "Marketplace não encontrado" });
+    }
+
+    let slug = marketplace.slug;
+
+    if (data.name && data.name !== marketplace.name) {
+      slug = createSlug(data.name);
+
+      const existingMarketplace = await prisma.marketplace.findFirst({
+        where: { slug, id: { not: marketplace.id } },
+      });
+
+      if (existingMarketplace) {
+        return response
+          .status(409)
+          .json({ message: "Já existe um marketplace com esse nome." });
+      }
+    }
+
+    const updatedMarketplace = await prisma.marketplace.update({
+      where: { id: marketplace.id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name, slug } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.websiteUrl !== undefined
+          ? { websiteUrl: data.websiteUrl }
+          : {}),
+        ...(data.logoUrl !== undefined ? { logoUrl: data.logoUrl } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+      },
+    });
+
+    return response.json({ marketplace: updatedMarketplace });
+  }
+
+  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      await marketplaceService.delete(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+```
+
 ## src\controllers\mercado-livre-controller.ts
 
 ```ts
@@ -2131,7 +2906,9 @@ const createProductSchema = z.object({
 
   affiliateUrl: z.string().trim().url(),
 
-  category: z.string().trim().optional(),
+  // relações obrigatórias
+  subcategoryId: z.string().uuid("ID da subcategoria inválido"),
+  marketplaceId: z.string().uuid("ID do marketplace inválido"),
 
   featured: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
@@ -2158,7 +2935,9 @@ const updateProductSchema = z.object({
 
   affiliateUrl: z.string().trim().url().optional(),
 
-  category: z.string().trim().optional(),
+  // relações opcionais no update
+  subcategoryId: z.string().uuid().optional(),
+  marketplaceId: z.string().uuid().optional(),
 
   featured: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
@@ -2189,7 +2968,8 @@ export class ProductsController {
     const query = z
       .object({
         search: z.string().trim().optional(),
-        category: z.string().trim().optional(),
+        subcategoryId: z.string().uuid().optional(),
+        marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
       })
       .parse(request.query);
@@ -2197,7 +2977,8 @@ export class ProductsController {
     const products = await prisma.product.findMany({
       where: {
         available: true,
-        ...(query.category ? { category: query.category } : {}),
+        ...(query.subcategoryId ? { subcategoryId: query.subcategoryId } : {}),
+        ...(query.marketplaceId ? { marketplaceId: query.marketplaceId } : {}),
         ...(query.featured !== undefined ? { featured: query.featured } : {}),
         ...(query.search
           ? {
@@ -2220,9 +3001,7 @@ export class ProductsController {
     const slug = createSlug(data.title);
 
     const existingProduct = await prisma.product.findUnique({
-      where: {
-        slug,
-      },
+      where: { slug },
     });
 
     if (existingProduct) {
@@ -2235,57 +3014,40 @@ export class ProductsController {
       data: {
         title: data.title,
         slug,
-
         description: data.description ?? null,
         shortDescription: data.shortDescription ?? null,
-
         imageUrl: data.imageUrl,
-
         price: data.price,
         originalPrice: data.originalPrice ?? null,
-
         currency: data.currency,
-
         rating: data.rating ?? null,
         reviewsCount: data.reviewsCount,
-
         affiliateUrl: data.affiliateUrl,
-
-        category: data.category ?? null,
-
         featured: data.featured,
         available: data.available,
         active: data.active,
-
         seoTitle: data.seoTitle ?? null,
         seoDescription: data.seoDescription ?? null,
+
+        // relações obrigatórias
+        subcategory: { connect: { id: data.subcategoryId } },
+        marketplace: { connect: { id: data.marketplaceId } },
       },
     });
 
-    return response.status(201).json({
-      product,
-    });
+    return response.status(201).json({ product });
   }
 
   async update(request: Request, response: Response) {
-    const params = z
-      .object({
-        id: z.string().uuid(),
-      })
-      .parse(request.params);
-
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const data = updateProductSchema.parse(request.body);
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: params.id,
-      },
+      where: { id: params.id },
     });
 
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
 
     let slug = product.slug;
@@ -2294,121 +3056,80 @@ export class ProductsController {
       slug = createSlug(data.title);
 
       const existingProduct = await prisma.product.findFirst({
-        where: {
-          slug,
-          id: {
-            not: product.id,
-          },
-        },
+        where: { slug, id: { not: product.id } },
       });
 
       if (existingProduct) {
-        return response.status(409).json({
-          message: "Já existe um produto com esse título.",
-        });
+        return response
+          .status(409)
+          .json({ message: "Já existe um produto com esse título." });
       }
     }
 
     const updatedProduct = await prisma.product.update({
-      where: {
-        id: product.id,
-      },
-
+      where: { id: product.id },
       data: {
-        ...(data.title !== undefined
-          ? {
-              title: data.title,
-              slug,
-            }
-          : {}),
-
+        ...(data.title !== undefined ? { title: data.title, slug } : {}),
         ...(data.description !== undefined
           ? { description: data.description }
           : {}),
-
         ...(data.shortDescription !== undefined
           ? { shortDescription: data.shortDescription }
           : {}),
-
         ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
-
         ...(data.price !== undefined ? { price: data.price } : {}),
-
         ...(data.originalPrice !== undefined
           ? { originalPrice: data.originalPrice }
           : {}),
-
         ...(data.currency !== undefined ? { currency: data.currency } : {}),
-
         ...(data.rating !== undefined ? { rating: data.rating } : {}),
-
         ...(data.reviewsCount !== undefined
           ? { reviewsCount: data.reviewsCount }
           : {}),
-
         ...(data.affiliateUrl !== undefined
           ? { affiliateUrl: data.affiliateUrl }
           : {}),
-
-        ...(data.category !== undefined ? { category: data.category } : {}),
-
         ...(data.featured !== undefined ? { featured: data.featured } : {}),
-
         ...(data.available !== undefined ? { available: data.available } : {}),
-
         ...(data.active !== undefined ? { active: data.active } : {}),
-
         ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
-
         ...(data.seoDescription !== undefined
           ? { seoDescription: data.seoDescription }
+          : {}),
+        ...(data.subcategoryId
+          ? { subcategory: { connect: { id: data.subcategoryId } } }
+          : {}),
+        ...(data.marketplaceId
+          ? { marketplace: { connect: { id: data.marketplaceId } } }
           : {}),
       },
     });
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async updateStatus(request: Request, response: Response) {
-    const params = z
-      .object({
-        id: z.string().uuid(),
-      })
-      .parse(request.params);
-
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const data = updateProductStatusSchema.parse(request.body);
 
     const product = await prisma.product.findUnique({
-      where: {
-        id: params.id,
-      },
+      where: { id: params.id },
     });
 
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
 
     const updatedProduct = await prisma.product.update({
-      where: {
-        id: product.id,
-      },
-
+      where: { id: product.id },
       data: {
         ...(data.active !== undefined ? { active: data.active } : {}),
-
         ...(data.available !== undefined ? { available: data.available } : {}),
-
         ...(data.featured !== undefined ? { featured: data.featured } : {}),
       },
     });
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async sync(request: Request, response: Response) {
@@ -2416,36 +3137,25 @@ export class ProductsController {
     const receivedSecret = request.header("x-sync-token");
 
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({
-        message: "Não autorizado",
-      });
+      return response.status(401).json({ message: "Não autorizado" });
     }
 
     const products = await syncMercadoLivreProducts();
 
-    return response.json({
-      products,
-      synced: products.length,
-    });
+    return response.json({ products, synced: products.length });
   }
 
   async show(request: Request, response: Response) {
     const params = z
-      .object({
-        slug: z.string().trim().min(1),
-      })
+      .object({ slug: z.string().trim().min(1) })
       .parse(request.params);
 
     const product = await prisma.product.findUnique({
-      where: {
-        slug: params.slug,
-      },
+      where: { slug: params.slug },
     });
 
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
 
     return response.json({
@@ -2500,6 +3210,148 @@ class SessionsController {
 }
 
 export { SessionsController };
+```
+
+## src\controllers\subcategories-controller.ts
+
+```ts
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
+import { prisma } from "@/database/prisma";
+import { subcategoriesService } from "../services/subcategories-services";
+import { createSlug } from "../utils/createSlug";
+
+interface IdParams {
+  id: string;
+}
+
+const createSubcategorySchema = z.object({
+  categoryId: z.string().uuid(),
+  name: z
+    .string()
+    .min(2, "O nome da subcategoria deve ter pelo menos 2 caracteres"),
+  description: z.string().optional(),
+  image: z.string().url("Imagem deve ser uma URL válida").optional(),
+  active: z.boolean().optional().default(true),
+  sortOrder: z.number().int().optional().default(0),
+});
+
+const updateSubcategorySchema = z.object({
+  name: z.string().min(2).optional(),
+  description: z.string().optional(),
+  image: z.string().url().optional(),
+  active: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export class SubcategoriesController {
+  async create(request: Request, response: Response) {
+    const data = createSubcategorySchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingSubcategory = await prisma.subcategory.findUnique({
+      where: {
+        categoryId_slug: {
+          categoryId: data.categoryId,
+          slug,
+        },
+      },
+    });
+
+    if (existingSubcategory) {
+      return response
+        .status(409)
+        .json({ message: "Já existe uma subcategoria com esse nome." });
+    }
+
+    const subcategory = await prisma.subcategory.create({
+      data: {
+        categoryId: data.categoryId,
+        name: data.name,
+        slug,
+        description: data.description ?? null,
+        image: data.image ?? null,
+        active: data.active,
+        sortOrder: data.sortOrder,
+      },
+    });
+
+    return response.status(201).json({ subcategory });
+  }
+
+  async list(req: Request, res: Response) {
+    const subcategories = await subcategoriesService.list();
+    res.json(subcategories);
+  }
+
+  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      const subcategory = await subcategoriesService.get(req.params.id);
+      if (!subcategory) {
+        return res.status(404).json({ error: "Subcategoria não encontrada" });
+      }
+      res.json(subcategory);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(request: Request, response: Response) {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const data = updateSubcategorySchema.parse(request.body);
+
+    const subcategory = await prisma.subcategory.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!subcategory) {
+      return response
+        .status(404)
+        .json({ message: "Subcategoria não encontrada" });
+    }
+
+    let slug = subcategory.slug;
+
+    if (data.name && data.name !== subcategory.name) {
+      slug = createSlug(data.name);
+
+      const existingSubcategory = await prisma.subcategory.findFirst({
+        where: { slug, id: { not: subcategory.id } },
+      });
+
+      if (existingSubcategory) {
+        return response
+          .status(409)
+          .json({ message: "Já existe uma subcategoria com esse nome." });
+      }
+    }
+
+    const updatedSubcategory = await prisma.subcategory.update({
+      where: { id: subcategory.id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name, slug } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+        ...(data.image !== undefined ? { image: data.image } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
+      },
+    });
+
+    return response.json({ subcategory: updatedSubcategory });
+  }
+
+  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
+    try {
+      await subcategoriesService.delete(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+}
 ```
 
 ## src\controllers\users-controllers.ts
@@ -2707,6 +3559,7 @@ export function ensureAuthenticated(
 ## src\middleware\error-handling.ts
 
 ```ts
+/*src/middleware/error-handling*/
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { AppError } from "../utils/AppError.js";
@@ -2729,13 +3582,36 @@ export function errorHandling(
 }
 ```
 
+## src\routes\categories-routes.ts
+
+```ts
+// src/routes/category-routes.ts
+import { Router } from "express";
+import { CategoryController } from "../controllers/categories-controllers";
+
+const categoriesRouter = Router();
+const categoryController = new CategoryController();
+
+categoriesRouter.post("/", categoryController.create);
+categoriesRouter.get("/", categoryController.list);
+categoriesRouter.get("/:id", categoryController.get);
+categoriesRouter.put("/:id", categoryController.update);
+categoriesRouter.delete("/:id", categoryController.delete);
+
+export { categoriesRouter as categoriesRoutes };
+```
+
 ## src\routes\index.ts
 
 ```ts
+/* src/routes/index.ts */
 import { Router } from "express";
+import { categoriesRoutes } from "./categories-routes";
+import { marketplaceRoutes } from "./marketplace-routes";
 import { mercadoLivreRoutes } from "./mercado-livre-routes";
 import { productRoutes } from "./product-routes";
 import { sessionsRoutes } from "./sessions-routes";
+import { subcategoriesRoutes } from "./subcategories-routes";
 import { userRoutes } from "./user-routes";
 
 const routes = Router();
@@ -2744,8 +3620,29 @@ routes.use("/users", userRoutes);
 routes.use("/session", sessionsRoutes);
 routes.use("/mercado-livre", mercadoLivreRoutes);
 routes.use("/products", productRoutes);
+routes.use("/categories", categoriesRoutes);
+routes.use("/subcategories", subcategoriesRoutes);
+routes.use("/marketplaces", marketplaceRoutes);
 
 export { routes };
+```
+
+## src\routes\marketplace-routes.ts
+
+```ts
+import { Router } from "express";
+import { MarketplaceController } from "../controllers/marketplace-controller";
+
+const marketplaceRouter = Router();
+const marketplaceController = new MarketplaceController();
+
+marketplaceRouter.post("/", marketplaceController.create);
+marketplaceRouter.get("/", marketplaceController.list);
+marketplaceRouter.get("/:id", marketplaceController.get);
+marketplaceRouter.put("/:id", marketplaceController.update);
+marketplaceRouter.delete("/:id", marketplaceController.delete);
+
+export { marketplaceRouter as marketplaceRoutes };
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -2826,6 +3723,24 @@ sessionsRoutes.post("/", sessionsController.create);
 export { sessionsRoutes };
 ```
 
+## src\routes\subcategories-routes.ts
+
+```ts
+import { Router } from "express";
+import { SubcategoriesController } from "../controllers/subcategories-controller";
+
+const subcategoriesRouter = Router();
+const subcategoriesController = new SubcategoriesController();
+
+subcategoriesRouter.post("/", subcategoriesController.create);
+subcategoriesRouter.get("/", subcategoriesController.list);
+subcategoriesRouter.get("/:id", subcategoriesController.get);
+subcategoriesRouter.put("/:id", subcategoriesController.update);
+subcategoriesRouter.delete("/:id", subcategoriesController.delete);
+
+export { subcategoriesRouter as subcategoriesRoutes };
+```
+
 ## src\routes\user-routes.ts
 
 ```ts
@@ -2855,6 +3770,71 @@ app.listen(PORT, () => {
 });
 ```
 
+## src\services\categories-service.ts
+
+```ts
+// src/services/category-service.ts
+import { prisma } from "@/database/prisma";
+
+export const categoryService = {
+  async create(data: any) {
+    return prisma.category.create({ data });
+  },
+
+  async list() {
+    return prisma.category.findMany({ include: { subcategories: true } });
+  },
+
+  async get(id: string) {
+    return prisma.category.findUnique({
+      where: { id },
+      include: { subcategories: true },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.category.update({ where: { id }, data });
+  },
+
+  async delete(id: string) {
+    return prisma.category.delete({ where: { id } });
+  },
+};
+```
+
+## src\services\marketplace-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+export const marketplaceService = {
+  async create(data: any) {
+    return prisma.marketplace.create({ data });
+  },
+
+  async list() {
+    return prisma.marketplace.findMany({
+      include: { products: true },
+    });
+  },
+
+  async get(id: string) {
+    return prisma.marketplace.findUnique({
+      where: { id },
+      include: { products: true },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.marketplace.update({ where: { id }, data });
+  },
+
+  async delete(id: string) {
+    return prisma.marketplace.delete({ where: { id } });
+  },
+};
+```
+
 ## src\services\mercado-livre-service.ts
 
 ```ts
@@ -2879,17 +3859,14 @@ const tokenResponseSchema = z.object({
 
 const apiBaseUrl = "https://api.mercadolibre.com";
 
-const MARKETPLACE = "MERCADOLIVRE";
+// id do marketplace cadastrado no banco
+const MARKETPLACE_ID = "MERCADOLIVRE";
 
 function getStateToken() {
   return jwt.sign(
-    {
-      nonce: randomBytes(16).toString("hex"),
-    },
+    { nonce: randomBytes(16).toString("hex") },
     process.env.JWT_SECRET!,
-    {
-      expiresIn: "10m",
-    },
+    { expiresIn: "10m" },
   );
 }
 
@@ -2908,14 +3885,11 @@ export function getMercadoLivreAuthorizationUrl() {
 
 export async function connectMercadoLivre(code: string, state: string) {
   assertMercadoLivreConfig();
-
   jwt.verify(state, process.env.JWT_SECRET!);
 
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
       client_id: mercadoLivreConfig.clientId!,
@@ -2930,16 +3904,12 @@ export async function connectMercadoLivre(code: string, state: string) {
   }
 
   const token = tokenResponseSchema.parse(await response.json());
-
   return saveConnection(token);
 }
 
 async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
   return prisma.mercadoLivreConnection.upsert({
-    where: {
-      id: 1,
-    },
-
+    where: { id: 1 },
     create: {
       id: 1,
       sellerId: String(token.user_id),
@@ -2947,7 +3917,6 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
       refreshToken: token.refresh_token,
       expiresAt: new Date(Date.now() + token.expires_in * 1000),
     },
-
     update: {
       sellerId: String(token.user_id),
       accessToken: token.access_token,
@@ -2959,9 +3928,7 @@ async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
 
 async function getAccessToken() {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: {
-      id: 1,
-    },
+    where: { id: 1 },
   });
 
   if (!connection) {
@@ -2976,9 +3943,7 @@ async function getAccessToken() {
 
   const response = await fetch(`${apiBaseUrl}/oauth/token`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
       client_id: mercadoLivreConfig.clientId!,
@@ -2992,15 +3957,12 @@ async function getAccessToken() {
   }
 
   const token = tokenResponseSchema.parse(await response.json());
-
   return (await saveConnection(token)).accessToken;
 }
 
 export async function getMercadoLivreProducts(search?: string) {
   const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: {
-      id: 1,
-    },
+    where: { id: 1 },
   });
 
   if (!connection) {
@@ -3009,18 +3971,11 @@ export async function getMercadoLivreProducts(search?: string) {
 
   const accessToken = await getAccessToken();
 
-  const params = new URLSearchParams({
-    status: "active",
-    limit: "50",
-  });
+  const params = new URLSearchParams({ status: "active", limit: "50" });
 
   const idsResponse = await fetch(
     `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    },
+    { headers: { Authorization: `Bearer ${accessToken}` } },
   );
 
   if (!idsResponse.ok) {
@@ -3028,21 +3983,15 @@ export async function getMercadoLivreProducts(search?: string) {
   }
 
   const ids = z
-    .object({
-      results: z.array(z.string()),
-    })
+    .object({ results: z.array(z.string()) })
     .parse(await idsResponse.json()).results;
 
-  if (!ids.length) {
-    return [];
-  }
+  if (!ids.length) return [];
 
   const detailsResponse = await fetch(
     `${apiBaseUrl}/items?ids=${ids.join(",")}`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { Authorization: `Bearer ${accessToken}` },
     },
   );
 
@@ -3051,11 +4000,7 @@ export async function getMercadoLivreProducts(search?: string) {
   }
 
   const details = z
-    .array(
-      z.object({
-        body: z.record(z.string(), z.unknown()),
-      }),
-    )
+    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
     .parse(await detailsResponse.json());
 
   const normalizedSearch = search?.trim().toLocaleLowerCase();
@@ -3070,107 +4015,140 @@ export async function getMercadoLivreProducts(search?: string) {
     .map((item) => {
       const externalId = String(item.id);
       const title = String(item.title);
-
       const currency = item.currency_id ? String(item.currency_id) : "BRL";
-
       const price = Number(item.price ?? 0);
-
       const imageUrl = String(item.thumbnail ?? "");
-
       const affiliateUrl = String(item.permalink ?? "#");
-
-      const category = item.category_id ? String(item.category_id) : null;
-
       const slug = createSlug(title, externalId);
 
       return {
         externalId,
-        marketplace: MARKETPLACE,
-
         title,
         slug,
-
         description: null,
         shortDescription: null,
-
         imageUrl,
-
         price,
         originalPrice: null,
-
         currency,
-
         rating: null,
         reviewsCount: 0,
-
         affiliateUrl,
+        available: true,
+        syncedAt: new Date(),
 
-        category,
+        // relações obrigatórias
+        subcategoryId: "UUID-DA-SUBCATEGORY", // ajustar conforme sua lógica
+        marketplaceId: MARKETPLACE_ID,
       };
     });
 }
 
 export async function syncMercadoLivreProducts() {
   const products = await getMercadoLivreProducts();
-
   const syncedAt = new Date();
 
   await prisma.$transaction(
     products.map((product) =>
       prisma.product.upsert({
         where: {
-          externalId_marketplace: {
+          externalId_marketplaceId: {
             externalId: product.externalId,
-            marketplace: product.marketplace,
+            marketplaceId: product.marketplaceId,
           },
         },
-
         create: {
-          ...product,
+          externalId: product.externalId,
+          title: product.title,
+          slug: product.slug,
+          description: product.description,
+          shortDescription: product.shortDescription,
+          imageUrl: product.imageUrl,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          currency: product.currency,
+          rating: product.rating,
+          reviewsCount: product.reviewsCount,
+          affiliateUrl: product.affiliateUrl,
           available: true,
           syncedAt,
-        },
 
+          // apenas IDs escalares
+          subcategoryId: product.subcategoryId,
+          marketplaceId: product.marketplaceId,
+        },
         update: {
-          ...product,
+          title: product.title,
+          slug: product.slug,
+          description: product.description,
+          shortDescription: product.shortDescription,
+          imageUrl: product.imageUrl,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          currency: product.currency,
+          rating: product.rating,
+          reviewsCount: product.reviewsCount,
+          affiliateUrl: product.affiliateUrl,
           available: true,
           syncedAt,
+
+          subcategoryId: product.subcategoryId,
+          marketplaceId: product.marketplaceId,
         },
       }),
     ),
   );
 
-  const externalIds = products.map((product) => product.externalId);
+  const externalIds = products.map((p) => p.externalId);
 
   await prisma.product.updateMany({
     where: externalIds.length
       ? {
-          marketplace: MARKETPLACE,
-          externalId: {
-            notIn: externalIds,
-          },
+          marketplaceId: MARKETPLACE_ID,
+          externalId: { notIn: externalIds },
         }
-      : {
-          marketplace: MARKETPLACE,
-        },
-
-    data: {
-      available: false,
-      syncedAt,
-    },
+      : { marketplaceId: MARKETPLACE_ID },
+    data: { available: false, syncedAt },
   });
 
   return prisma.product.findMany({
-    where: {
-      marketplace: MARKETPLACE,
-      available: true,
-    },
-
-    orderBy: {
-      updatedAt: "desc",
-    },
+    where: { marketplaceId: MARKETPLACE_ID, available: true },
+    orderBy: { updatedAt: "desc" },
   });
 }
+```
+
+## src\services\subcategories-services.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+export const subcategoriesService = {
+  async create(data: any) {
+    return prisma.subcategory.create({ data });
+  },
+
+  async list() {
+    return prisma.subcategory.findMany({
+      include: { category: true, products: true },
+    });
+  },
+
+  async get(id: string) {
+    return prisma.subcategory.findUnique({
+      where: { id },
+      include: { category: true, products: true },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.subcategory.update({ where: { id }, data });
+  },
+
+  async delete(id: string) {
+    return prisma.subcategory.delete({ where: { id } });
+  },
+};
 ```
 
 ## src\types\aliases.d.ts

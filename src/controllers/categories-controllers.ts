@@ -1,13 +1,8 @@
-// src/controllers/category-controller.ts
-import type { NextFunction, Request, Response } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "@/database/prisma";
 import { categoryService } from "../services/categories-service";
 import { createSlug } from "../utils/createSlug";
-
-interface IdParams {
-  id: string;
-}
 
 export const categorySchema = z.object({
   name: z
@@ -35,6 +30,10 @@ const updateCategorySchema = z.object({
   image: z.string().url().optional(),
   active: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
+});
+
+const idSchema = z.object({
+  id: z.string().uuid(),
 });
 
 export class CategoryController {
@@ -67,31 +66,36 @@ export class CategoryController {
 
   async list(req: Request, res: Response) {
     const categories = await categoryService.list();
-    res.json(categories);
+    return res.json(categories);
   }
 
-  async get(req: Request<IdParams>, res: Response, next: NextFunction) {
-    try {
-      const category = await categoryService.get(req.params.id);
-      if (!category) {
-        return res.status(404).json({ error: "Categoria não encontrada" });
-      }
-      res.json(category);
-    } catch (error) {
-      next(error);
+  async get(req: Request, res: Response) {
+    const { id } = idSchema.parse(req.params);
+
+    const category = await categoryService.get(id);
+
+    if (!category) {
+      return res.status(404).json({
+        error: "Categoria não encontrada",
+      });
     }
+
+    return res.json(category);
   }
 
   async update(request: Request, response: Response) {
-    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const { id } = idSchema.parse(request.params);
+
     const data = updateCategorySchema.parse(request.body);
 
     const category = await prisma.category.findUnique({
-      where: { id: params.id },
+      where: { id },
     });
 
     if (!category) {
-      return response.status(404).json({ message: "Categoria não encontrada" });
+      return response.status(404).json({
+        message: "Categoria não encontrada",
+      });
     }
 
     let slug = category.slug;
@@ -100,7 +104,10 @@ export class CategoryController {
       slug = createSlug(data.name);
 
       const existingCategory = await prisma.category.findFirst({
-        where: { slug, id: { not: category.id } },
+        where: {
+          slug,
+          id: { not: category.id },
+        },
       });
 
       if (existingCategory) {
@@ -111,25 +118,30 @@ export class CategoryController {
     }
 
     const updatedCategory = await prisma.category.update({
-      where: { id: category.id },
+      where: {
+        id: category.id,
+      },
       data: {
         ...(data.name !== undefined ? { name: data.name, slug } : {}),
         ...(data.description !== undefined
           ? { description: data.description }
           : {}),
         ...(data.image !== undefined ? { image: data.image } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.sortOrder !== undefined ? { sortOrder: data.sortOrder } : {}),
       },
     });
 
-    return response.json({ category: updatedCategory });
+    return response.json({
+      category: updatedCategory,
+    });
   }
 
-  async delete(req: Request<IdParams>, res: Response, next: NextFunction) {
-    try {
-      await categoryService.delete(req.params.id);
-      res.status(204).send();
-    } catch (error) {
-      next(error);
-    }
+  async delete(req: Request, res: Response) {
+    const { id } = idSchema.parse(req.params);
+
+    await categoryService.delete(id);
+
+    return res.status(204).send();
   }
 }

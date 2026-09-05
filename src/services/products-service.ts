@@ -1,0 +1,198 @@
+import { prisma } from "@/database/prisma";
+import { createSlug } from "@/utils/createSlug";
+
+export const productsService = {
+  async list(filters: {
+    search?: string | undefined;
+    subcategoryId?: string | undefined;
+    marketplaceId?: string | undefined;
+    featured?: boolean | undefined;
+  }) {
+    return prisma.product.findMany({
+      where: {
+        available: true,
+
+        ...(filters.subcategoryId
+          ? { subcategoryId: filters.subcategoryId }
+          : {}),
+
+        ...(filters.marketplaceId
+          ? { marketplaceId: filters.marketplaceId }
+          : {}),
+
+        ...(filters.featured !== undefined
+          ? { featured: filters.featured }
+          : {}),
+
+        ...(filters.search
+          ? {
+              title: {
+                contains: filters.search,
+                mode: "insensitive",
+              },
+            }
+          : {}),
+      },
+
+      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+    });
+  },
+
+  async findById(id: string) {
+    return prisma.product.findUnique({
+      where: { id },
+    });
+  },
+
+  async findBySlug(slug: string) {
+    return prisma.product.findUnique({
+      where: { slug },
+    });
+  },
+
+  async findBySlugExceptId(slug: string, id: string) {
+    return prisma.product.findFirst({
+      where: {
+        slug,
+        id: {
+          not: id,
+        },
+      },
+    });
+  },
+
+  async create(data: any) {
+    const slug = createSlug(data.title);
+
+    return prisma.product.create({
+      data: {
+        title: data.title,
+        slug,
+        description: data.description ?? null,
+        shortDescription: data.shortDescription ?? null,
+        imageUrl: data.imageUrl,
+        price: data.price,
+        originalPrice: data.originalPrice ?? null,
+        currency: data.currency,
+        rating: data.rating ?? null,
+        reviewsCount: data.reviewsCount,
+        affiliateUrl: data.affiliateUrl,
+
+        featured: data.featured,
+        available: data.available,
+        active: data.active,
+
+        seoTitle: data.seoTitle ?? null,
+        seoDescription: data.seoDescription ?? null,
+
+        subcategory: {
+          connect: {
+            id: data.subcategoryId,
+          },
+        },
+
+        marketplace: {
+          connect: {
+            id: data.marketplaceId,
+          },
+        },
+      },
+    });
+  },
+
+  async update(id: string, data: any) {
+    return prisma.product.update({
+      where: { id },
+
+      data: {
+        ...(data.title !== undefined
+          ? {
+              title: data.title,
+              slug: createSlug(data.title),
+            }
+          : {}),
+
+        ...(data.description !== undefined
+          ? { description: data.description }
+          : {}),
+
+        ...(data.shortDescription !== undefined
+          ? { shortDescription: data.shortDescription }
+          : {}),
+
+        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
+
+        ...(data.price !== undefined ? { price: data.price } : {}),
+
+        ...(data.originalPrice !== undefined
+          ? { originalPrice: data.originalPrice }
+          : {}),
+
+        ...(data.currency !== undefined ? { currency: data.currency } : {}),
+
+        ...(data.rating !== undefined ? { rating: data.rating } : {}),
+
+        ...(data.reviewsCount !== undefined
+          ? { reviewsCount: data.reviewsCount }
+          : {}),
+
+        ...(data.affiliateUrl !== undefined
+          ? { affiliateUrl: data.affiliateUrl }
+          : {}),
+
+        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+
+        ...(data.available !== undefined ? { available: data.available } : {}),
+
+        ...(data.active !== undefined ? { active: data.active } : {}),
+
+        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+        ...(data.seoDescription !== undefined
+          ? { seoDescription: data.seoDescription }
+          : {}),
+
+        ...(data.subcategoryId
+          ? {
+              subcategory: {
+                connect: {
+                  id: data.subcategoryId,
+                },
+              },
+            }
+          : {}),
+
+        ...(data.marketplaceId
+          ? {
+              marketplace: {
+                connect: {
+                  id: data.marketplaceId,
+                },
+              },
+            }
+          : {}),
+      },
+    });
+  },
+
+  async updateStatus(
+    id: string,
+    data: {
+      active?: boolean | undefined;
+      available?: boolean | undefined;
+      featured?: boolean | undefined;
+    },
+  ) {
+    return prisma.product.update({
+      where: { id },
+
+      data: {
+        ...(data.active !== undefined ? { active: data.active } : {}),
+
+        ...(data.available !== undefined ? { available: data.available } : {}),
+
+        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+      },
+    });
+  },
+};
