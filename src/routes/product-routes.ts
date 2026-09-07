@@ -9,10 +9,27 @@ const productRoutes = Router();
 const productsController = new ProductsController();
 
 // Públicas
+
 productRoutes.get("/", productsController.index);
+
+productRoutes.get(
+  "/admin",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.indexAdmin,
+);
+
+productRoutes.get(
+  "/id/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.showById,
+);
+
 productRoutes.get("/:slug", productsController.show);
 
 // Administrativas
+
 productRoutes.post(
   "/",
   ensureAuthenticated,

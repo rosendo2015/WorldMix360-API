@@ -2,6 +2,7 @@ import { prisma } from "@/database/prisma";
 import { createSlug } from "@/utils/createSlug";
 
 export const productsService = {
+  // Lista pública de produtos
   async list(filters: {
     search?: string | undefined;
     subcategoryId?: string | undefined;
@@ -32,6 +33,59 @@ export const productsService = {
               },
             }
           : {}),
+      },
+
+      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+    });
+  },
+
+  // Lista administrativa de produtos
+  // Retorna produtos disponíveis e indisponíveis.
+  async listAdmin(filters: {
+    search?: string | undefined;
+    subcategoryId?: string | undefined;
+    marketplaceId?: string | undefined;
+    featured?: boolean | undefined;
+    active?: boolean | undefined;
+    available?: boolean | undefined;
+  }) {
+    return prisma.product.findMany({
+      where: {
+        ...(filters.subcategoryId
+          ? { subcategoryId: filters.subcategoryId }
+          : {}),
+
+        ...(filters.marketplaceId
+          ? { marketplaceId: filters.marketplaceId }
+          : {}),
+
+        ...(filters.featured !== undefined
+          ? { featured: filters.featured }
+          : {}),
+
+        ...(filters.active !== undefined ? { active: filters.active } : {}),
+
+        ...(filters.available !== undefined
+          ? { available: filters.available }
+          : {}),
+
+        ...(filters.search
+          ? {
+              title: {
+                contains: filters.search,
+                mode: "insensitive",
+              },
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+        marketplace: true,
       },
 
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],

@@ -104,6 +104,25 @@ export class ProductsController {
     });
   }
 
+  async indexAdmin(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        subcategoryId: z.string().uuid().optional(),
+        marketplaceId: z.string().uuid().optional(),
+        featured: z.coerce.boolean().optional(),
+        active: z.coerce.boolean().optional(),
+        available: z.coerce.boolean().optional(),
+      })
+      .parse(request.query);
+
+    const products = await productsService.listAdmin(query);
+
+    return response.json({
+      products,
+    });
+  }
+
   async create(request: Request, response: Response) {
     const data = createProductSchema.parse(request.body);
 
@@ -194,6 +213,22 @@ export class ProductsController {
     return response.json({
       products,
       synced: products.length,
+    });
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const product = await productsService.findById(id);
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    return response.json({
+      product,
     });
   }
 
