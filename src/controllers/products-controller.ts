@@ -13,6 +13,15 @@ const createProductSchema = z.object({
 
   imageUrl: z.string().trim().url(),
 
+  images: z
+    .array(
+      z.object({
+        imageUrl: z.string().trim().url(),
+        sortOrder: z.coerce.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional(),
+
   price: z.coerce.number().nonnegative(),
   originalPrice: z.coerce.number().nonnegative().optional(),
 
@@ -40,6 +49,15 @@ const updateProductSchema = z.object({
   shortDescription: z.string().trim().optional(),
 
   imageUrl: z.string().trim().url().optional(),
+
+  images: z
+    .array(
+      z.object({
+        imageUrl: z.string().trim().url(),
+        sortOrder: z.coerce.number().int().nonnegative().optional(),
+      }),
+    )
+    .optional(),
 
   price: z.coerce.number().nonnegative().optional(),
   originalPrice: z.coerce.number().nonnegative().optional(),

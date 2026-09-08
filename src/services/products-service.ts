@@ -35,6 +35,14 @@ export const productsService = {
           : {}),
       },
 
+      include: {
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
+
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
     });
   },
@@ -85,7 +93,14 @@ export const productsService = {
             category: true,
           },
         },
+
         marketplace: true,
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
 
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
@@ -95,12 +110,28 @@ export const productsService = {
   async findById(id: string) {
     return prisma.product.findUnique({
       where: { id },
+
+      include: {
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
     });
   },
 
   async findBySlug(slug: string) {
     return prisma.product.findUnique({
       where: { slug },
+
+      include: {
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
     });
   },
 
@@ -150,82 +181,148 @@ export const productsService = {
             id: data.marketplaceId,
           },
         },
+
+        ...(data.images?.length
+          ? {
+              images: {
+                create: data.images.map(
+                  (
+                    image: {
+                      imageUrl: string;
+                      sortOrder?: number;
+                    },
+                    index: number,
+                  ) => ({
+                    imageUrl: image.imageUrl,
+                    sortOrder: image.sortOrder ?? index,
+                  }),
+                ),
+              },
+            }
+          : {}),
+      },
+
+      include: {
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
     });
   },
 
   async update(id: string, data: any) {
-    return prisma.product.update({
-      where: { id },
+    return prisma.$transaction(async (tx) => {
+      if (data.images !== undefined) {
+        await tx.productImage.deleteMany({
+          where: {
+            productId: id,
+          },
+        });
+      }
 
-      data: {
-        ...(data.title !== undefined
-          ? {
-              title: data.title,
-              slug: createSlug(data.title),
-            }
-          : {}),
+      return tx.product.update({
+        where: { id },
 
-        ...(data.description !== undefined
-          ? { description: data.description }
-          : {}),
+        data: {
+          ...(data.title !== undefined
+            ? {
+                title: data.title,
+                slug: createSlug(data.title),
+              }
+            : {}),
 
-        ...(data.shortDescription !== undefined
-          ? { shortDescription: data.shortDescription }
-          : {}),
+          ...(data.description !== undefined
+            ? { description: data.description }
+            : {}),
 
-        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
+          ...(data.shortDescription !== undefined
+            ? { shortDescription: data.shortDescription }
+            : {}),
 
-        ...(data.price !== undefined ? { price: data.price } : {}),
+          ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
 
-        ...(data.originalPrice !== undefined
-          ? { originalPrice: data.originalPrice }
-          : {}),
+          ...(data.price !== undefined ? { price: data.price } : {}),
 
-        ...(data.currency !== undefined ? { currency: data.currency } : {}),
+          ...(data.originalPrice !== undefined
+            ? { originalPrice: data.originalPrice }
+            : {}),
 
-        ...(data.rating !== undefined ? { rating: data.rating } : {}),
+          ...(data.currency !== undefined ? { currency: data.currency } : {}),
 
-        ...(data.reviewsCount !== undefined
-          ? { reviewsCount: data.reviewsCount }
-          : {}),
+          ...(data.rating !== undefined ? { rating: data.rating } : {}),
 
-        ...(data.affiliateUrl !== undefined
-          ? { affiliateUrl: data.affiliateUrl }
-          : {}),
+          ...(data.reviewsCount !== undefined
+            ? { reviewsCount: data.reviewsCount }
+            : {}),
 
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
+          ...(data.affiliateUrl !== undefined
+            ? { affiliateUrl: data.affiliateUrl }
+            : {}),
 
-        ...(data.available !== undefined ? { available: data.available } : {}),
+          ...(data.featured !== undefined ? { featured: data.featured } : {}),
 
-        ...(data.active !== undefined ? { active: data.active } : {}),
+          ...(data.available !== undefined
+            ? { available: data.available }
+            : {}),
 
-        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+          ...(data.active !== undefined ? { active: data.active } : {}),
 
-        ...(data.seoDescription !== undefined
-          ? { seoDescription: data.seoDescription }
-          : {}),
+          ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
 
-        ...(data.subcategoryId
-          ? {
-              subcategory: {
-                connect: {
-                  id: data.subcategoryId,
+          ...(data.seoDescription !== undefined
+            ? { seoDescription: data.seoDescription }
+            : {}),
+
+          ...(data.subcategoryId
+            ? {
+                subcategory: {
+                  connect: {
+                    id: data.subcategoryId,
+                  },
                 },
-              },
-            }
-          : {}),
+              }
+            : {}),
 
-        ...(data.marketplaceId
-          ? {
-              marketplace: {
-                connect: {
-                  id: data.marketplaceId,
+          ...(data.marketplaceId
+            ? {
+                marketplace: {
+                  connect: {
+                    id: data.marketplaceId,
+                  },
                 },
-              },
-            }
-          : {}),
-      },
+              }
+            : {}),
+
+          ...(data.images !== undefined && data.images.length > 0
+            ? {
+                images: {
+                  create: data.images.map(
+                    (
+                      image: {
+                        imageUrl: string;
+                        sortOrder?: number;
+                      },
+                      index: number,
+                    ) => ({
+                      imageUrl: image.imageUrl,
+                      sortOrder: image.sortOrder ?? index,
+                    }),
+                  ),
+                },
+              }
+            : {}),
+        },
+
+        include: {
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
+          },
+        },
+      });
     });
   },
 
@@ -246,6 +343,14 @@ export const productsService = {
         ...(data.available !== undefined ? { available: data.available } : {}),
 
         ...(data.featured !== undefined ? { featured: data.featured } : {}),
+      },
+
+      include: {
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
     });
   },

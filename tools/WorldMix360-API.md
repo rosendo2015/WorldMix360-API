@@ -256,6 +256,7 @@ POST /products/sync  (header x-sync-token)
 
 ```ts
 import express from "express";
+
 import { mercadoLivreConfig } from "./configs/mercado-livre";
 import { errorHandling } from "./middleware/error-handling";
 import { routes } from "./routes";
@@ -264,16 +265,32 @@ const app = express();
 
 app.use((request, response, next) => {
   response.header("Access-Control-Allow-Origin", mercadoLivreConfig.corsOrigin);
-  response.header("Access-Control-Allow-Headers", "Content-Type");
-  response.header("Access-Control-Allow-Methods", "GET, OPTIONS");
-  if (request.method === "OPTIONS") return response.sendStatus(204);
+
+  response.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization",
+  );
+
+  response.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
+
+  if (request.method === "OPTIONS") {
+    return response.sendStatus(204);
+  }
+
   next();
 });
+
 app.use(express.json());
+
 app.get("/health", (_request, response) => {
   return response.json({ status: "ok" });
 });
+
 app.use(routes);
+
 app.use(errorHandling);
 
 export { app };
@@ -823,6 +840,25 @@ export class ProductsController {
     });
   }
 
+  async indexAdmin(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        subcategoryId: z.string().uuid().optional(),
+        marketplaceId: z.string().uuid().optional(),
+        featured: z.coerce.boolean().optional(),
+        active: z.coerce.boolean().optional(),
+        available: z.coerce.boolean().optional(),
+      })
+      .parse(request.query);
+
+    const products = await productsService.listAdmin(query);
+
+    return response.json({
+      products,
+    });
+  }
+
   async create(request: Request, response: Response) {
     const data = createProductSchema.parse(request.body);
 
@@ -913,6 +949,22 @@ export class ProductsController {
     return response.json({
       products,
       synced: products.length,
+    });
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const product = await productsService.findById(id);
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    return response.json({
+      product,
     });
   }
 
@@ -1550,10 +1602,27 @@ const productRoutes = Router();
 const productsController = new ProductsController();
 
 // Públicas
+
 productRoutes.get("/", productsController.index);
+
+productRoutes.get(
+  "/admin",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.indexAdmin,
+);
+
+productRoutes.get(
+  "/id/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.showById,
+);
+
 productRoutes.get("/:slug", productsController.show);
 
 // Administrativas
+
 productRoutes.post(
   "/",
   ensureAuthenticated,
@@ -2082,6 +2151,7 @@ import { prisma } from "@/database/prisma";
 import { createSlug } from "@/utils/createSlug";
 
 export const productsService = {
+  // Lista pública de produtos
   async list(filters: {
     search?: string | undefined;
     subcategoryId?: string | undefined;
@@ -2112,6 +2182,59 @@ export const productsService = {
               },
             }
           : {}),
+      },
+
+      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+    });
+  },
+
+  // Lista administrativa de produtos
+  // Retorna produtos disponíveis e indisponíveis.
+  async listAdmin(filters: {
+    search?: string | undefined;
+    subcategoryId?: string | undefined;
+    marketplaceId?: string | undefined;
+    featured?: boolean | undefined;
+    active?: boolean | undefined;
+    available?: boolean | undefined;
+  }) {
+    return prisma.product.findMany({
+      where: {
+        ...(filters.subcategoryId
+          ? { subcategoryId: filters.subcategoryId }
+          : {}),
+
+        ...(filters.marketplaceId
+          ? { marketplaceId: filters.marketplaceId }
+          : {}),
+
+        ...(filters.featured !== undefined
+          ? { featured: filters.featured }
+          : {}),
+
+        ...(filters.active !== undefined ? { active: filters.active } : {}),
+
+        ...(filters.available !== undefined
+          ? { available: filters.available }
+          : {}),
+
+        ...(filters.search
+          ? {
+              title: {
+                contains: filters.search,
+                mode: "insensitive",
+              },
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+        marketplace: true,
       },
 
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
@@ -2895,6 +3018,7 @@ POST /products/sync  (header x-sync-token)
 
 ```ts
 import express from "express";
+
 import { mercadoLivreConfig } from "./configs/mercado-livre";
 import { errorHandling } from "./middleware/error-handling";
 import { routes } from "./routes";
@@ -2903,16 +3027,32 @@ const app = express();
 
 app.use((request, response, next) => {
   response.header("Access-Control-Allow-Origin", mercadoLivreConfig.corsOrigin);
-  response.header("Access-Control-Allow-Headers", "Content-Type");
-  response.header("Access-Control-Allow-Methods", "GET, OPTIONS");
-  if (request.method === "OPTIONS") return response.sendStatus(204);
+
+  response.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization",
+  );
+
+  response.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
+
+  if (request.method === "OPTIONS") {
+    return response.sendStatus(204);
+  }
+
   next();
 });
+
 app.use(express.json());
+
 app.get("/health", (_request, response) => {
   return response.json({ status: "ok" });
 });
+
 app.use(routes);
+
 app.use(errorHandling);
 
 export { app };
@@ -3462,6 +3602,25 @@ export class ProductsController {
     });
   }
 
+  async indexAdmin(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        subcategoryId: z.string().uuid().optional(),
+        marketplaceId: z.string().uuid().optional(),
+        featured: z.coerce.boolean().optional(),
+        active: z.coerce.boolean().optional(),
+        available: z.coerce.boolean().optional(),
+      })
+      .parse(request.query);
+
+    const products = await productsService.listAdmin(query);
+
+    return response.json({
+      products,
+    });
+  }
+
   async create(request: Request, response: Response) {
     const data = createProductSchema.parse(request.body);
 
@@ -3552,6 +3711,22 @@ export class ProductsController {
     return response.json({
       products,
       synced: products.length,
+    });
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const product = await productsService.findById(id);
+
+    if (!product) {
+      return response.status(404).json({
+        message: "Produto não encontrado",
+      });
+    }
+
+    return response.json({
+      product,
     });
   }
 
@@ -4189,10 +4364,27 @@ const productRoutes = Router();
 const productsController = new ProductsController();
 
 // Públicas
+
 productRoutes.get("/", productsController.index);
+
+productRoutes.get(
+  "/admin",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.indexAdmin,
+);
+
+productRoutes.get(
+  "/id/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.showById,
+);
+
 productRoutes.get("/:slug", productsController.show);
 
 // Administrativas
+
 productRoutes.post(
   "/",
   ensureAuthenticated,
@@ -4721,6 +4913,7 @@ import { prisma } from "@/database/prisma";
 import { createSlug } from "@/utils/createSlug";
 
 export const productsService = {
+  // Lista pública de produtos
   async list(filters: {
     search?: string | undefined;
     subcategoryId?: string | undefined;
@@ -4751,6 +4944,59 @@ export const productsService = {
               },
             }
           : {}),
+      },
+
+      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+    });
+  },
+
+  // Lista administrativa de produtos
+  // Retorna produtos disponíveis e indisponíveis.
+  async listAdmin(filters: {
+    search?: string | undefined;
+    subcategoryId?: string | undefined;
+    marketplaceId?: string | undefined;
+    featured?: boolean | undefined;
+    active?: boolean | undefined;
+    available?: boolean | undefined;
+  }) {
+    return prisma.product.findMany({
+      where: {
+        ...(filters.subcategoryId
+          ? { subcategoryId: filters.subcategoryId }
+          : {}),
+
+        ...(filters.marketplaceId
+          ? { marketplaceId: filters.marketplaceId }
+          : {}),
+
+        ...(filters.featured !== undefined
+          ? { featured: filters.featured }
+          : {}),
+
+        ...(filters.active !== undefined ? { active: filters.active } : {}),
+
+        ...(filters.available !== undefined
+          ? { available: filters.available }
+          : {}),
+
+        ...(filters.search
+          ? {
+              title: {
+                contains: filters.search,
+                mode: "insensitive",
+              },
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+        marketplace: true,
       },
 
       orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
