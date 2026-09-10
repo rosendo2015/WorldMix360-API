@@ -742,30 +742,28 @@ import { productsService } from "@/services/products-service";
 
 import { createSlug } from "@/utils/createSlug";
 
+const productImageSchema = z.object({
+  imageUrl: z.string().trim().url(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
 const createProductSchema = z.object({
   title: z.string().trim().min(1),
   description: z.string().trim().optional(),
   shortDescription: z.string().trim().optional(),
-
   imageUrl: z.string().trim().url(),
-
+  images: z.array(productImageSchema).optional(),
   price: z.coerce.number().nonnegative(),
   originalPrice: z.coerce.number().nonnegative().optional(),
-
   currency: z.string().trim().default("BRL"),
-
   rating: z.coerce.number().min(0).max(5).optional(),
   reviewsCount: z.coerce.number().int().nonnegative().default(0),
-
   affiliateUrl: z.string().trim().url(),
-
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
-
   featured: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
   active: z.coerce.boolean().default(true),
-
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
@@ -774,26 +772,19 @@ const updateProductSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().trim().optional(),
   shortDescription: z.string().trim().optional(),
-
   imageUrl: z.string().trim().url().optional(),
-
+  images: z.array(productImageSchema).optional(),
   price: z.coerce.number().nonnegative().optional(),
   originalPrice: z.coerce.number().nonnegative().optional(),
-
   currency: z.string().trim().optional(),
-
   rating: z.coerce.number().min(0).max(5).optional(),
   reviewsCount: z.coerce.number().int().nonnegative().optional(),
-
   affiliateUrl: z.string().trim().url().optional(),
-
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
-
   featured: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
   active: z.coerce.boolean().optional(),
-
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
@@ -822,11 +813,16 @@ const slugSchema = z.object({
   slug: z.string().trim().min(1),
 });
 
+type CreateProductData = z.infer<typeof createProductSchema>;
+type UpdateProductData = z.infer<typeof updateProductSchema>;
+type UpdateProductStatusData = z.infer<typeof updateProductStatusSchema>;
+
 export class ProductsController {
   async index(request: Request, response: Response) {
     const query = z
       .object({
         search: z.string().trim().optional(),
+        category: z.string().trim().optional(),
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
@@ -860,10 +856,8 @@ export class ProductsController {
   }
 
   async create(request: Request, response: Response) {
-    const data = createProductSchema.parse(request.body);
-
+    const data: CreateProductData = createProductSchema.parse(request.body);
     const slug = createSlug(data.title);
-
     const existingProduct = await productsService.findBySlug(slug);
 
     if (existingProduct) {
@@ -874,16 +868,12 @@ export class ProductsController {
 
     const product = await productsService.create(data);
 
-    return response.status(201).json({
-      product,
-    });
+    return response.status(201).json({ product });
   }
 
   async update(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
-
-    const data = updateProductSchema.parse(request.body);
-
+    const data: UpdateProductData = updateProductSchema.parse(request.body);
     const product = await productsService.findById(id);
 
     if (!product) {
@@ -894,7 +884,6 @@ export class ProductsController {
 
     if (data.title && data.title !== product.title) {
       const slug = createSlug(data.title);
-
       const existingProduct = await productsService.findBySlugExceptId(
         slug,
         product.id,
@@ -909,16 +898,14 @@ export class ProductsController {
 
     const updatedProduct = await productsService.update(product.id, data);
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async updateStatus(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
-
-    const data = updateProductStatusSchema.parse(request.body);
-
+    const data: UpdateProductStatusData = updateProductStatusSchema.parse(
+      request.body,
+    );
     const product = await productsService.findById(id);
 
     if (!product) {
@@ -929,9 +916,7 @@ export class ProductsController {
 
     const updatedProduct = await productsService.updateStatus(product.id, data);
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async sync(request: Request, response: Response) {
@@ -954,7 +939,6 @@ export class ProductsController {
 
   async showById(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
-
     const product = await productsService.findById(id);
 
     if (!product) {
@@ -963,14 +947,11 @@ export class ProductsController {
       });
     }
 
-    return response.json({
-      product,
-    });
+    return response.json({ product });
   }
 
   async show(request: Request, response: Response) {
     const { slug } = slugSchema.parse(request.params);
-
     const product = await productsService.findBySlug(slug);
 
     if (!product) {
@@ -979,8 +960,37 @@ export class ProductsController {
       });
     }
 
+    return response.json({ product });
+  }
+}
+
+```
+
+## src\controllers\search-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+import { searchService } from "@/services/search-service";
+
+const searchSchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .min(1, "Informe um termo para pesquisa.")
+    .max(100, "O termo de pesquisa é muito longo."),
+});
+
+export class SearchController {
+  async search(request: Request, response: Response) {
+    const { q } = searchSchema.parse(request.query);
+
+    const results = await searchService.search(q);
+
     return response.json({
-      product,
+      query: q,
+      ...results,
     });
   }
 }
@@ -1506,6 +1516,7 @@ export { categoriesRouter as categoriesRoutes };
 ```ts
 /* src/routes/index.ts */
 import { Router } from "express";
+import { searchRouter } from "@/routes/search-routes";
 import { categoriesRoutes } from "./categories-routes";
 import { marketplaceRoutes } from "./marketplace-routes";
 import { mercadoLivreRoutes } from "./mercado-livre-routes";
@@ -1523,6 +1534,7 @@ routes.use("/products", productRoutes);
 routes.use("/categories", categoriesRoutes);
 routes.use("/subcategories", subcategoriesRoutes);
 routes.use("/marketplaces", marketplaceRoutes);
+routes.use("/search", searchRouter);
 
 export { routes };
 
@@ -1652,6 +1664,23 @@ productRoutes.post(
 );
 
 export { productRoutes };
+
+```
+
+## src\routes\search-routes.ts
+
+```ts
+import { Router } from "express";
+
+import { SearchController } from "@/controllers/search-controller";
+
+const searchRouter = Router();
+
+const searchController = new SearchController();
+
+searchRouter.get("/", searchController.search);
+
+export { searchRouter };
 
 ```
 
@@ -2148,82 +2177,172 @@ export async function syncMercadoLivreProducts() {
 
 ```ts
 import { prisma } from "@/database/prisma";
-import { createSlug } from "@/utils/createSlug";
+
+type ProductImageInput = {
+  imageUrl: string;
+  sortOrder?: number | undefined;
+};
+
+type CreateProductInput = {
+  title: string;
+  description?: string | undefined;
+  shortDescription?: string | undefined;
+  imageUrl: string;
+  images?: ProductImageInput[] | undefined;
+  price: number;
+  originalPrice?: number | undefined;
+  currency: string;
+  rating?: number | undefined;
+  reviewsCount?: number | undefined;
+  affiliateUrl: string;
+  subcategoryId: string;
+  marketplaceId: string;
+  featured?: boolean | undefined;
+  available?: boolean | undefined;
+  active?: boolean | undefined;
+  seoTitle?: string | undefined;
+  seoDescription?: string | undefined;
+};
+
+type UpdateProductInput = {
+  title?: string | undefined;
+  description?: string | undefined;
+  shortDescription?: string | undefined;
+  imageUrl?: string | undefined;
+  images?: ProductImageInput[] | undefined;
+  price?: number | undefined;
+  originalPrice?: number | undefined;
+  currency?: string | undefined;
+  rating?: number | undefined;
+  reviewsCount?: number | undefined;
+  affiliateUrl?: string | undefined;
+  subcategoryId?: string | undefined;
+  marketplaceId?: string | undefined;
+  featured?: boolean | undefined;
+  available?: boolean | undefined;
+  active?: boolean | undefined;
+  seoTitle?: string | undefined;
+  seoDescription?: string | undefined;
+};
+
+type ProductStatusInput = {
+  active?: boolean | undefined;
+  available?: boolean | undefined;
+  featured?: boolean | undefined;
+};
+
+type ProductQuery = {
+  search?: string | undefined;
+  category?: string | undefined;
+  subcategoryId?: string | undefined;
+  marketplaceId?: string | undefined;
+  featured?: boolean | undefined;
+};
+
+type ProductAdminQuery = {
+  search?: string | undefined;
+  subcategoryId?: string | undefined;
+  marketplaceId?: string | undefined;
+  featured?: boolean | undefined;
+  active?: boolean | undefined;
+  available?: boolean | undefined;
+};
+
+type ProductWithRelations = {
+  subcategory?: {
+    name?: string;
+    slug?: string;
+    category?: {
+      id?: string;
+      name: string;
+      slug?: string;
+    } | null;
+  } | null;
+  images?: Array<{
+    id: string;
+    imageUrl: string;
+    sortOrder: number;
+  }>;
+  [key: string]: unknown;
+};
+
+function serializeProduct<T extends ProductWithRelations>(product: T) {
+  const { subcategory, ...productData } = product;
+
+  return {
+    ...productData,
+    category: subcategory?.category?.name ?? null,
+  };
+}
+
+function serializeProducts<T extends ProductWithRelations>(products: T[]) {
+  return products.map(serializeProduct);
+}
 
 export const productsService = {
-  // Lista pública de produtos
-  async list(filters: {
-    search?: string | undefined;
-    subcategoryId?: string | undefined;
-    marketplaceId?: string | undefined;
-    featured?: boolean | undefined;
-  }) {
-    return prisma.product.findMany({
+  async list(query: ProductQuery = {}) {
+    const products = await prisma.product.findMany({
       where: {
+        active: true,
         available: true,
 
-        ...(filters.subcategoryId
-          ? { subcategoryId: filters.subcategoryId }
-          : {}),
-
-        ...(filters.marketplaceId
-          ? { marketplaceId: filters.marketplaceId }
-          : {}),
-
-        ...(filters.featured !== undefined
-          ? { featured: filters.featured }
-          : {}),
-
-        ...(filters.search
+        ...(query.search
           ? {
-              title: {
-                contains: filters.search,
-                mode: "insensitive",
+              OR: [
+                {
+                  title: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
+
+        ...(query.category
+          ? {
+              subcategory: {
+                category: {
+                  OR: [
+                    {
+                      slug: {
+                        equals: query.category,
+                        mode: "insensitive",
+                      },
+                    },
+                    {
+                      name: {
+                        equals: query.category,
+                        mode: "insensitive",
+                      },
+                    },
+                  ],
+                },
               },
             }
           : {}),
-      },
 
-      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
-    });
-  },
-
-  // Lista administrativa de produtos
-  // Retorna produtos disponíveis e indisponíveis.
-  async listAdmin(filters: {
-    search?: string | undefined;
-    subcategoryId?: string | undefined;
-    marketplaceId?: string | undefined;
-    featured?: boolean | undefined;
-    active?: boolean | undefined;
-    available?: boolean | undefined;
-  }) {
-    return prisma.product.findMany({
-      where: {
-        ...(filters.subcategoryId
-          ? { subcategoryId: filters.subcategoryId }
-          : {}),
-
-        ...(filters.marketplaceId
-          ? { marketplaceId: filters.marketplaceId }
-          : {}),
-
-        ...(filters.featured !== undefined
-          ? { featured: filters.featured }
-          : {}),
-
-        ...(filters.active !== undefined ? { active: filters.active } : {}),
-
-        ...(filters.available !== undefined
-          ? { available: filters.available }
-          : {}),
-
-        ...(filters.search
+        ...(query.subcategoryId
           ? {
-              title: {
-                contains: filters.search,
-                mode: "insensitive",
-              },
+              subcategoryId: query.subcategoryId,
+            }
+          : {}),
+
+        ...(query.marketplaceId
+          ? {
+              marketplaceId: query.marketplaceId,
+            }
+          : {}),
+
+        ...(query.featured !== undefined
+          ? {
+              featured: query.featured,
             }
           : {}),
       },
@@ -2234,59 +2353,223 @@ export const productsService = {
             category: true,
           },
         },
-        marketplace: true,
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
 
-      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+      orderBy: {
+        createdAt: "desc",
+      },
     });
+
+    return serializeProducts(products);
+  },
+
+  async listAdmin(query: ProductAdminQuery = {}) {
+    const products = await prisma.product.findMany({
+      where: {
+        ...(query.search
+          ? {
+              OR: [
+                {
+                  title: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
+
+        ...(query.subcategoryId
+          ? {
+              subcategoryId: query.subcategoryId,
+            }
+          : {}),
+
+        ...(query.marketplaceId
+          ? {
+              marketplaceId: query.marketplaceId,
+            }
+          : {}),
+
+        ...(query.featured !== undefined
+          ? {
+              featured: query.featured,
+            }
+          : {}),
+
+        ...(query.active !== undefined
+          ? {
+              active: query.active,
+            }
+          : {}),
+
+        ...(query.available !== undefined
+          ? {
+              available: query.available,
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        marketplace: true,
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return serializeProducts(products);
   },
 
   async findById(id: string) {
-    return prisma.product.findUnique({
-      where: { id },
+    const product = await prisma.product.findUnique({
+      where: {
+        id,
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
     });
+
+    if (!product) {
+      return null;
+    }
+
+    return serializeProduct(product);
   },
 
   async findBySlug(slug: string) {
-    return prisma.product.findUnique({
-      where: { slug },
+    const product = await prisma.product.findUnique({
+      where: {
+        slug,
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
     });
+
+    if (!product) {
+      return null;
+    }
+
+    return serializeProduct(product);
   },
 
   async findBySlugExceptId(slug: string, id: string) {
     return prisma.product.findFirst({
       where: {
         slug,
-        id: {
-          not: id,
+        NOT: {
+          id,
         },
       },
     });
   },
 
-  async create(data: any) {
-    const slug = createSlug(data.title);
+  async create(data: CreateProductInput) {
+    const slug = createProductSlug(data.title);
 
-    return prisma.product.create({
+    const product = await prisma.product.create({
       data: {
         title: data.title,
         slug,
-        description: data.description ?? null,
-        shortDescription: data.shortDescription ?? null,
+
+        ...(data.description !== undefined
+          ? {
+              description: data.description,
+            }
+          : {}),
+
+        ...(data.shortDescription !== undefined
+          ? {
+              shortDescription: data.shortDescription,
+            }
+          : {}),
+
         imageUrl: data.imageUrl,
+
         price: data.price,
-        originalPrice: data.originalPrice ?? null,
+
+        ...(data.originalPrice !== undefined
+          ? {
+              originalPrice: data.originalPrice,
+            }
+          : {}),
+
         currency: data.currency,
-        rating: data.rating ?? null,
-        reviewsCount: data.reviewsCount,
+
+        ...(data.rating !== undefined
+          ? {
+              rating: data.rating,
+            }
+          : {}),
+
+        reviewsCount: data.reviewsCount ?? 0,
+
         affiliateUrl: data.affiliateUrl,
 
-        featured: data.featured,
-        available: data.available,
-        active: data.active,
+        available: data.available ?? true,
+        featured: data.featured ?? false,
+        active: data.active ?? true,
 
-        seoTitle: data.seoTitle ?? null,
-        seoDescription: data.seoDescription ?? null,
+        ...(data.seoTitle !== undefined
+          ? {
+              seoTitle: data.seoTitle,
+            }
+          : {}),
+
+        ...(data.seoDescription !== undefined
+          ? {
+              seoDescription: data.seoDescription,
+            }
+          : {}),
 
         subcategory: {
           connect: {
@@ -2299,104 +2582,399 @@ export const productsService = {
             id: data.marketplaceId,
           },
         },
+
+        ...(data.images !== undefined
+          ? {
+              images: {
+                create: data.images.map((image, index) => ({
+                  imageUrl: image.imageUrl,
+                  sortOrder: image.sortOrder ?? index,
+                })),
+              },
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
     });
+
+    return serializeProduct(product);
   },
 
-  async update(id: string, data: any) {
-    return prisma.product.update({
-      where: { id },
+  async update(id: string, data: UpdateProductInput) {
+    const product = await prisma.$transaction(async (tx) => {
+      if (data.images !== undefined) {
+        await tx.productImage.deleteMany({
+          where: {
+            productId: id,
+          },
+        });
+      }
+
+      const updatedProduct = await tx.product.update({
+        where: {
+          id,
+        },
+
+        data: {
+          ...(data.title !== undefined
+            ? {
+                title: data.title,
+                slug: createProductSlug(data.title),
+              }
+            : {}),
+
+          ...(data.description !== undefined
+            ? {
+                description: data.description,
+              }
+            : {}),
+
+          ...(data.shortDescription !== undefined
+            ? {
+                shortDescription: data.shortDescription,
+              }
+            : {}),
+
+          ...(data.imageUrl !== undefined
+            ? {
+                imageUrl: data.imageUrl,
+              }
+            : {}),
+
+          ...(data.price !== undefined
+            ? {
+                price: data.price,
+              }
+            : {}),
+
+          ...(data.originalPrice !== undefined
+            ? {
+                originalPrice: data.originalPrice,
+              }
+            : {}),
+
+          ...(data.currency !== undefined
+            ? {
+                currency: data.currency,
+              }
+            : {}),
+
+          ...(data.rating !== undefined
+            ? {
+                rating: data.rating,
+              }
+            : {}),
+
+          ...(data.reviewsCount !== undefined
+            ? {
+                reviewsCount: data.reviewsCount,
+              }
+            : {}),
+
+          ...(data.affiliateUrl !== undefined
+            ? {
+                affiliateUrl: data.affiliateUrl,
+              }
+            : {}),
+
+          ...(data.available !== undefined
+            ? {
+                available: data.available,
+              }
+            : {}),
+
+          ...(data.featured !== undefined
+            ? {
+                featured: data.featured,
+              }
+            : {}),
+
+          ...(data.active !== undefined
+            ? {
+                active: data.active,
+              }
+            : {}),
+
+          ...(data.seoTitle !== undefined
+            ? {
+                seoTitle: data.seoTitle,
+              }
+            : {}),
+
+          ...(data.seoDescription !== undefined
+            ? {
+                seoDescription: data.seoDescription,
+              }
+            : {}),
+
+          ...(data.subcategoryId !== undefined
+            ? {
+                subcategory: {
+                  connect: {
+                    id: data.subcategoryId,
+                  },
+                },
+              }
+            : {}),
+
+          ...(data.marketplaceId !== undefined
+            ? {
+                marketplace: {
+                  connect: {
+                    id: data.marketplaceId,
+                  },
+                },
+              }
+            : {}),
+
+          ...(data.images !== undefined
+            ? {
+                images: {
+                  create: data.images.map((image, index) => ({
+                    imageUrl: image.imageUrl,
+                    sortOrder: image.sortOrder ?? index,
+                  })),
+                },
+              }
+            : {}),
+        },
+
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
+          },
+        },
+      });
+
+      return updatedProduct;
+    });
+
+    return serializeProduct(product);
+  },
+
+  async updateStatus(id: string, data: ProductStatusInput) {
+    const product = await prisma.product.update({
+      where: {
+        id,
+      },
 
       data: {
-        ...(data.title !== undefined
+        ...(data.active !== undefined
           ? {
-              title: data.title,
-              slug: createSlug(data.title),
+              active: data.active,
             }
           : {}),
 
-        ...(data.description !== undefined
-          ? { description: data.description }
-          : {}),
-
-        ...(data.shortDescription !== undefined
-          ? { shortDescription: data.shortDescription }
-          : {}),
-
-        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
-
-        ...(data.price !== undefined ? { price: data.price } : {}),
-
-        ...(data.originalPrice !== undefined
-          ? { originalPrice: data.originalPrice }
-          : {}),
-
-        ...(data.currency !== undefined ? { currency: data.currency } : {}),
-
-        ...(data.rating !== undefined ? { rating: data.rating } : {}),
-
-        ...(data.reviewsCount !== undefined
-          ? { reviewsCount: data.reviewsCount }
-          : {}),
-
-        ...(data.affiliateUrl !== undefined
-          ? { affiliateUrl: data.affiliateUrl }
-          : {}),
-
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
-
-        ...(data.available !== undefined ? { available: data.available } : {}),
-
-        ...(data.active !== undefined ? { active: data.active } : {}),
-
-        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
-
-        ...(data.seoDescription !== undefined
-          ? { seoDescription: data.seoDescription }
-          : {}),
-
-        ...(data.subcategoryId
+        ...(data.available !== undefined
           ? {
+              available: data.available,
+            }
+          : {}),
+
+        ...(data.featured !== undefined
+          ? {
+              featured: data.featured,
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
+    });
+
+    return serializeProduct(product);
+  },
+};
+
+function createProductSlug(title: string) {
+  return title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+```
+
+## src\services\search-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+export const searchService = {
+  async search(query: string) {
+    const search = query.trim();
+
+    if (!search) {
+      return {
+        products: [],
+        categories: [],
+        subcategories: [],
+      };
+    }
+
+    const [products, categories, subcategories] = await Promise.all([
+      prisma.product.findMany({
+        where: {
+          active: true,
+          available: true,
+          OR: [
+            {
+              title: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              shortDescription: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
               subcategory: {
-                connect: {
-                  id: data.subcategoryId,
+                name: {
+                  contains: search,
+                  mode: "insensitive",
                 },
               },
-            }
-          : {}),
-
-        ...(data.marketplaceId
-          ? {
-              marketplace: {
-                connect: {
-                  id: data.marketplaceId,
+            },
+            {
+              subcategory: {
+                category: {
+                  name: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
                 },
               },
-            }
-          : {}),
-      },
-    });
-  },
+            },
+          ],
+        },
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 20,
+      }),
 
-  async updateStatus(
-    id: string,
-    data: {
-      active?: boolean | undefined;
-      available?: boolean | undefined;
-      featured?: boolean | undefined;
-    },
-  ) {
-    return prisma.product.update({
-      where: { id },
+      prisma.category.findMany({
+        where: {
+          active: true,
+          OR: [
+            {
+              name: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+          ],
+        },
+        orderBy: {
+          sortOrder: "asc",
+        },
+        take: 20,
+      }),
 
-      data: {
-        ...(data.active !== undefined ? { active: data.active } : {}),
+      prisma.subcategory.findMany({
+        where: {
+          active: true,
+          OR: [
+            {
+              name: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+          ],
+        },
+        include: {
+          category: true,
+        },
+        orderBy: {
+          sortOrder: "asc",
+        },
+        take: 20,
+      }),
+    ]);
 
-        ...(data.available !== undefined ? { available: data.available } : {}),
+    return {
+      products: products.map((product) => {
+        const { subcategory, ...productData } = product;
 
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
-      },
-    });
+        return {
+          ...productData,
+          category: subcategory?.category?.name ?? null,
+        };
+      }),
+
+      categories,
+
+      subcategories,
+    };
   },
 };
 
@@ -3504,30 +4082,28 @@ import { productsService } from "@/services/products-service";
 
 import { createSlug } from "@/utils/createSlug";
 
+const productImageSchema = z.object({
+  imageUrl: z.string().trim().url(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
 const createProductSchema = z.object({
   title: z.string().trim().min(1),
   description: z.string().trim().optional(),
   shortDescription: z.string().trim().optional(),
-
   imageUrl: z.string().trim().url(),
-
+  images: z.array(productImageSchema).optional(),
   price: z.coerce.number().nonnegative(),
   originalPrice: z.coerce.number().nonnegative().optional(),
-
   currency: z.string().trim().default("BRL"),
-
   rating: z.coerce.number().min(0).max(5).optional(),
   reviewsCount: z.coerce.number().int().nonnegative().default(0),
-
   affiliateUrl: z.string().trim().url(),
-
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
-
   featured: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
   active: z.coerce.boolean().default(true),
-
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
@@ -3536,26 +4112,19 @@ const updateProductSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().trim().optional(),
   shortDescription: z.string().trim().optional(),
-
   imageUrl: z.string().trim().url().optional(),
-
+  images: z.array(productImageSchema).optional(),
   price: z.coerce.number().nonnegative().optional(),
   originalPrice: z.coerce.number().nonnegative().optional(),
-
   currency: z.string().trim().optional(),
-
   rating: z.coerce.number().min(0).max(5).optional(),
   reviewsCount: z.coerce.number().int().nonnegative().optional(),
-
   affiliateUrl: z.string().trim().url().optional(),
-
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
-
   featured: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
   active: z.coerce.boolean().optional(),
-
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
@@ -3584,11 +4153,16 @@ const slugSchema = z.object({
   slug: z.string().trim().min(1),
 });
 
+type CreateProductData = z.infer<typeof createProductSchema>;
+type UpdateProductData = z.infer<typeof updateProductSchema>;
+type UpdateProductStatusData = z.infer<typeof updateProductStatusSchema>;
+
 export class ProductsController {
   async index(request: Request, response: Response) {
     const query = z
       .object({
         search: z.string().trim().optional(),
+        category: z.string().trim().optional(),
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
@@ -3622,10 +4196,8 @@ export class ProductsController {
   }
 
   async create(request: Request, response: Response) {
-    const data = createProductSchema.parse(request.body);
-
+    const data: CreateProductData = createProductSchema.parse(request.body);
     const slug = createSlug(data.title);
-
     const existingProduct = await productsService.findBySlug(slug);
 
     if (existingProduct) {
@@ -3636,16 +4208,12 @@ export class ProductsController {
 
     const product = await productsService.create(data);
 
-    return response.status(201).json({
-      product,
-    });
+    return response.status(201).json({ product });
   }
 
   async update(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
-
-    const data = updateProductSchema.parse(request.body);
-
+    const data: UpdateProductData = updateProductSchema.parse(request.body);
     const product = await productsService.findById(id);
 
     if (!product) {
@@ -3656,7 +4224,6 @@ export class ProductsController {
 
     if (data.title && data.title !== product.title) {
       const slug = createSlug(data.title);
-
       const existingProduct = await productsService.findBySlugExceptId(
         slug,
         product.id,
@@ -3671,16 +4238,14 @@ export class ProductsController {
 
     const updatedProduct = await productsService.update(product.id, data);
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async updateStatus(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
-
-    const data = updateProductStatusSchema.parse(request.body);
-
+    const data: UpdateProductStatusData = updateProductStatusSchema.parse(
+      request.body,
+    );
     const product = await productsService.findById(id);
 
     if (!product) {
@@ -3691,9 +4256,7 @@ export class ProductsController {
 
     const updatedProduct = await productsService.updateStatus(product.id, data);
 
-    return response.json({
-      product: updatedProduct,
-    });
+    return response.json({ product: updatedProduct });
   }
 
   async sync(request: Request, response: Response) {
@@ -3716,7 +4279,6 @@ export class ProductsController {
 
   async showById(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
-
     const product = await productsService.findById(id);
 
     if (!product) {
@@ -3725,14 +4287,11 @@ export class ProductsController {
       });
     }
 
-    return response.json({
-      product,
-    });
+    return response.json({ product });
   }
 
   async show(request: Request, response: Response) {
     const { slug } = slugSchema.parse(request.params);
-
     const product = await productsService.findBySlug(slug);
 
     if (!product) {
@@ -3741,8 +4300,37 @@ export class ProductsController {
       });
     }
 
+    return response.json({ product });
+  }
+}
+
+```
+
+## src\controllers\search-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+import { searchService } from "@/services/search-service";
+
+const searchSchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .min(1, "Informe um termo para pesquisa.")
+    .max(100, "O termo de pesquisa é muito longo."),
+});
+
+export class SearchController {
+  async search(request: Request, response: Response) {
+    const { q } = searchSchema.parse(request.query);
+
+    const results = await searchService.search(q);
+
     return response.json({
-      product,
+      query: q,
+      ...results,
     });
   }
 }
@@ -4268,6 +4856,7 @@ export { categoriesRouter as categoriesRoutes };
 ```ts
 /* src/routes/index.ts */
 import { Router } from "express";
+import { searchRouter } from "@/routes/search-routes";
 import { categoriesRoutes } from "./categories-routes";
 import { marketplaceRoutes } from "./marketplace-routes";
 import { mercadoLivreRoutes } from "./mercado-livre-routes";
@@ -4285,6 +4874,7 @@ routes.use("/products", productRoutes);
 routes.use("/categories", categoriesRoutes);
 routes.use("/subcategories", subcategoriesRoutes);
 routes.use("/marketplaces", marketplaceRoutes);
+routes.use("/search", searchRouter);
 
 export { routes };
 
@@ -4414,6 +5004,23 @@ productRoutes.post(
 );
 
 export { productRoutes };
+
+```
+
+## src\routes\search-routes.ts
+
+```ts
+import { Router } from "express";
+
+import { SearchController } from "@/controllers/search-controller";
+
+const searchRouter = Router();
+
+const searchController = new SearchController();
+
+searchRouter.get("/", searchController.search);
+
+export { searchRouter };
 
 ```
 
@@ -4910,82 +5517,172 @@ export async function syncMercadoLivreProducts() {
 
 ```ts
 import { prisma } from "@/database/prisma";
-import { createSlug } from "@/utils/createSlug";
+
+type ProductImageInput = {
+  imageUrl: string;
+  sortOrder?: number | undefined;
+};
+
+type CreateProductInput = {
+  title: string;
+  description?: string | undefined;
+  shortDescription?: string | undefined;
+  imageUrl: string;
+  images?: ProductImageInput[] | undefined;
+  price: number;
+  originalPrice?: number | undefined;
+  currency: string;
+  rating?: number | undefined;
+  reviewsCount?: number | undefined;
+  affiliateUrl: string;
+  subcategoryId: string;
+  marketplaceId: string;
+  featured?: boolean | undefined;
+  available?: boolean | undefined;
+  active?: boolean | undefined;
+  seoTitle?: string | undefined;
+  seoDescription?: string | undefined;
+};
+
+type UpdateProductInput = {
+  title?: string | undefined;
+  description?: string | undefined;
+  shortDescription?: string | undefined;
+  imageUrl?: string | undefined;
+  images?: ProductImageInput[] | undefined;
+  price?: number | undefined;
+  originalPrice?: number | undefined;
+  currency?: string | undefined;
+  rating?: number | undefined;
+  reviewsCount?: number | undefined;
+  affiliateUrl?: string | undefined;
+  subcategoryId?: string | undefined;
+  marketplaceId?: string | undefined;
+  featured?: boolean | undefined;
+  available?: boolean | undefined;
+  active?: boolean | undefined;
+  seoTitle?: string | undefined;
+  seoDescription?: string | undefined;
+};
+
+type ProductStatusInput = {
+  active?: boolean | undefined;
+  available?: boolean | undefined;
+  featured?: boolean | undefined;
+};
+
+type ProductQuery = {
+  search?: string | undefined;
+  category?: string | undefined;
+  subcategoryId?: string | undefined;
+  marketplaceId?: string | undefined;
+  featured?: boolean | undefined;
+};
+
+type ProductAdminQuery = {
+  search?: string | undefined;
+  subcategoryId?: string | undefined;
+  marketplaceId?: string | undefined;
+  featured?: boolean | undefined;
+  active?: boolean | undefined;
+  available?: boolean | undefined;
+};
+
+type ProductWithRelations = {
+  subcategory?: {
+    name?: string;
+    slug?: string;
+    category?: {
+      id?: string;
+      name: string;
+      slug?: string;
+    } | null;
+  } | null;
+  images?: Array<{
+    id: string;
+    imageUrl: string;
+    sortOrder: number;
+  }>;
+  [key: string]: unknown;
+};
+
+function serializeProduct<T extends ProductWithRelations>(product: T) {
+  const { subcategory, ...productData } = product;
+
+  return {
+    ...productData,
+    category: subcategory?.category?.name ?? null,
+  };
+}
+
+function serializeProducts<T extends ProductWithRelations>(products: T[]) {
+  return products.map(serializeProduct);
+}
 
 export const productsService = {
-  // Lista pública de produtos
-  async list(filters: {
-    search?: string | undefined;
-    subcategoryId?: string | undefined;
-    marketplaceId?: string | undefined;
-    featured?: boolean | undefined;
-  }) {
-    return prisma.product.findMany({
+  async list(query: ProductQuery = {}) {
+    const products = await prisma.product.findMany({
       where: {
+        active: true,
         available: true,
 
-        ...(filters.subcategoryId
-          ? { subcategoryId: filters.subcategoryId }
-          : {}),
-
-        ...(filters.marketplaceId
-          ? { marketplaceId: filters.marketplaceId }
-          : {}),
-
-        ...(filters.featured !== undefined
-          ? { featured: filters.featured }
-          : {}),
-
-        ...(filters.search
+        ...(query.search
           ? {
-              title: {
-                contains: filters.search,
-                mode: "insensitive",
+              OR: [
+                {
+                  title: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
+
+        ...(query.category
+          ? {
+              subcategory: {
+                category: {
+                  OR: [
+                    {
+                      slug: {
+                        equals: query.category,
+                        mode: "insensitive",
+                      },
+                    },
+                    {
+                      name: {
+                        equals: query.category,
+                        mode: "insensitive",
+                      },
+                    },
+                  ],
+                },
               },
             }
           : {}),
-      },
 
-      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
-    });
-  },
-
-  // Lista administrativa de produtos
-  // Retorna produtos disponíveis e indisponíveis.
-  async listAdmin(filters: {
-    search?: string | undefined;
-    subcategoryId?: string | undefined;
-    marketplaceId?: string | undefined;
-    featured?: boolean | undefined;
-    active?: boolean | undefined;
-    available?: boolean | undefined;
-  }) {
-    return prisma.product.findMany({
-      where: {
-        ...(filters.subcategoryId
-          ? { subcategoryId: filters.subcategoryId }
-          : {}),
-
-        ...(filters.marketplaceId
-          ? { marketplaceId: filters.marketplaceId }
-          : {}),
-
-        ...(filters.featured !== undefined
-          ? { featured: filters.featured }
-          : {}),
-
-        ...(filters.active !== undefined ? { active: filters.active } : {}),
-
-        ...(filters.available !== undefined
-          ? { available: filters.available }
-          : {}),
-
-        ...(filters.search
+        ...(query.subcategoryId
           ? {
-              title: {
-                contains: filters.search,
-                mode: "insensitive",
-              },
+              subcategoryId: query.subcategoryId,
+            }
+          : {}),
+
+        ...(query.marketplaceId
+          ? {
+              marketplaceId: query.marketplaceId,
+            }
+          : {}),
+
+        ...(query.featured !== undefined
+          ? {
+              featured: query.featured,
             }
           : {}),
       },
@@ -4996,59 +5693,223 @@ export const productsService = {
             category: true,
           },
         },
-        marketplace: true,
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
 
-      orderBy: [{ featured: "desc" }, { updatedAt: "desc" }],
+      orderBy: {
+        createdAt: "desc",
+      },
     });
+
+    return serializeProducts(products);
+  },
+
+  async listAdmin(query: ProductAdminQuery = {}) {
+    const products = await prisma.product.findMany({
+      where: {
+        ...(query.search
+          ? {
+              OR: [
+                {
+                  title: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+                {
+                  description: {
+                    contains: query.search,
+                    mode: "insensitive",
+                  },
+                },
+              ],
+            }
+          : {}),
+
+        ...(query.subcategoryId
+          ? {
+              subcategoryId: query.subcategoryId,
+            }
+          : {}),
+
+        ...(query.marketplaceId
+          ? {
+              marketplaceId: query.marketplaceId,
+            }
+          : {}),
+
+        ...(query.featured !== undefined
+          ? {
+              featured: query.featured,
+            }
+          : {}),
+
+        ...(query.active !== undefined
+          ? {
+              active: query.active,
+            }
+          : {}),
+
+        ...(query.available !== undefined
+          ? {
+              available: query.available,
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        marketplace: true,
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return serializeProducts(products);
   },
 
   async findById(id: string) {
-    return prisma.product.findUnique({
-      where: { id },
+    const product = await prisma.product.findUnique({
+      where: {
+        id,
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
     });
+
+    if (!product) {
+      return null;
+    }
+
+    return serializeProduct(product);
   },
 
   async findBySlug(slug: string) {
-    return prisma.product.findUnique({
-      where: { slug },
+    const product = await prisma.product.findUnique({
+      where: {
+        slug,
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
     });
+
+    if (!product) {
+      return null;
+    }
+
+    return serializeProduct(product);
   },
 
   async findBySlugExceptId(slug: string, id: string) {
     return prisma.product.findFirst({
       where: {
         slug,
-        id: {
-          not: id,
+        NOT: {
+          id,
         },
       },
     });
   },
 
-  async create(data: any) {
-    const slug = createSlug(data.title);
+  async create(data: CreateProductInput) {
+    const slug = createProductSlug(data.title);
 
-    return prisma.product.create({
+    const product = await prisma.product.create({
       data: {
         title: data.title,
         slug,
-        description: data.description ?? null,
-        shortDescription: data.shortDescription ?? null,
+
+        ...(data.description !== undefined
+          ? {
+              description: data.description,
+            }
+          : {}),
+
+        ...(data.shortDescription !== undefined
+          ? {
+              shortDescription: data.shortDescription,
+            }
+          : {}),
+
         imageUrl: data.imageUrl,
+
         price: data.price,
-        originalPrice: data.originalPrice ?? null,
+
+        ...(data.originalPrice !== undefined
+          ? {
+              originalPrice: data.originalPrice,
+            }
+          : {}),
+
         currency: data.currency,
-        rating: data.rating ?? null,
-        reviewsCount: data.reviewsCount,
+
+        ...(data.rating !== undefined
+          ? {
+              rating: data.rating,
+            }
+          : {}),
+
+        reviewsCount: data.reviewsCount ?? 0,
+
         affiliateUrl: data.affiliateUrl,
 
-        featured: data.featured,
-        available: data.available,
-        active: data.active,
+        available: data.available ?? true,
+        featured: data.featured ?? false,
+        active: data.active ?? true,
 
-        seoTitle: data.seoTitle ?? null,
-        seoDescription: data.seoDescription ?? null,
+        ...(data.seoTitle !== undefined
+          ? {
+              seoTitle: data.seoTitle,
+            }
+          : {}),
+
+        ...(data.seoDescription !== undefined
+          ? {
+              seoDescription: data.seoDescription,
+            }
+          : {}),
 
         subcategory: {
           connect: {
@@ -5061,104 +5922,399 @@ export const productsService = {
             id: data.marketplaceId,
           },
         },
+
+        ...(data.images !== undefined
+          ? {
+              images: {
+                create: data.images.map((image, index) => ({
+                  imageUrl: image.imageUrl,
+                  sortOrder: image.sortOrder ?? index,
+                })),
+              },
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
       },
     });
+
+    return serializeProduct(product);
   },
 
-  async update(id: string, data: any) {
-    return prisma.product.update({
-      where: { id },
+  async update(id: string, data: UpdateProductInput) {
+    const product = await prisma.$transaction(async (tx) => {
+      if (data.images !== undefined) {
+        await tx.productImage.deleteMany({
+          where: {
+            productId: id,
+          },
+        });
+      }
+
+      const updatedProduct = await tx.product.update({
+        where: {
+          id,
+        },
+
+        data: {
+          ...(data.title !== undefined
+            ? {
+                title: data.title,
+                slug: createProductSlug(data.title),
+              }
+            : {}),
+
+          ...(data.description !== undefined
+            ? {
+                description: data.description,
+              }
+            : {}),
+
+          ...(data.shortDescription !== undefined
+            ? {
+                shortDescription: data.shortDescription,
+              }
+            : {}),
+
+          ...(data.imageUrl !== undefined
+            ? {
+                imageUrl: data.imageUrl,
+              }
+            : {}),
+
+          ...(data.price !== undefined
+            ? {
+                price: data.price,
+              }
+            : {}),
+
+          ...(data.originalPrice !== undefined
+            ? {
+                originalPrice: data.originalPrice,
+              }
+            : {}),
+
+          ...(data.currency !== undefined
+            ? {
+                currency: data.currency,
+              }
+            : {}),
+
+          ...(data.rating !== undefined
+            ? {
+                rating: data.rating,
+              }
+            : {}),
+
+          ...(data.reviewsCount !== undefined
+            ? {
+                reviewsCount: data.reviewsCount,
+              }
+            : {}),
+
+          ...(data.affiliateUrl !== undefined
+            ? {
+                affiliateUrl: data.affiliateUrl,
+              }
+            : {}),
+
+          ...(data.available !== undefined
+            ? {
+                available: data.available,
+              }
+            : {}),
+
+          ...(data.featured !== undefined
+            ? {
+                featured: data.featured,
+              }
+            : {}),
+
+          ...(data.active !== undefined
+            ? {
+                active: data.active,
+              }
+            : {}),
+
+          ...(data.seoTitle !== undefined
+            ? {
+                seoTitle: data.seoTitle,
+              }
+            : {}),
+
+          ...(data.seoDescription !== undefined
+            ? {
+                seoDescription: data.seoDescription,
+              }
+            : {}),
+
+          ...(data.subcategoryId !== undefined
+            ? {
+                subcategory: {
+                  connect: {
+                    id: data.subcategoryId,
+                  },
+                },
+              }
+            : {}),
+
+          ...(data.marketplaceId !== undefined
+            ? {
+                marketplace: {
+                  connect: {
+                    id: data.marketplaceId,
+                  },
+                },
+              }
+            : {}),
+
+          ...(data.images !== undefined
+            ? {
+                images: {
+                  create: data.images.map((image, index) => ({
+                    imageUrl: image.imageUrl,
+                    sortOrder: image.sortOrder ?? index,
+                  })),
+                },
+              }
+            : {}),
+        },
+
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
+          },
+        },
+      });
+
+      return updatedProduct;
+    });
+
+    return serializeProduct(product);
+  },
+
+  async updateStatus(id: string, data: ProductStatusInput) {
+    const product = await prisma.product.update({
+      where: {
+        id,
+      },
 
       data: {
-        ...(data.title !== undefined
+        ...(data.active !== undefined
           ? {
-              title: data.title,
-              slug: createSlug(data.title),
+              active: data.active,
             }
           : {}),
 
-        ...(data.description !== undefined
-          ? { description: data.description }
-          : {}),
-
-        ...(data.shortDescription !== undefined
-          ? { shortDescription: data.shortDescription }
-          : {}),
-
-        ...(data.imageUrl !== undefined ? { imageUrl: data.imageUrl } : {}),
-
-        ...(data.price !== undefined ? { price: data.price } : {}),
-
-        ...(data.originalPrice !== undefined
-          ? { originalPrice: data.originalPrice }
-          : {}),
-
-        ...(data.currency !== undefined ? { currency: data.currency } : {}),
-
-        ...(data.rating !== undefined ? { rating: data.rating } : {}),
-
-        ...(data.reviewsCount !== undefined
-          ? { reviewsCount: data.reviewsCount }
-          : {}),
-
-        ...(data.affiliateUrl !== undefined
-          ? { affiliateUrl: data.affiliateUrl }
-          : {}),
-
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
-
-        ...(data.available !== undefined ? { available: data.available } : {}),
-
-        ...(data.active !== undefined ? { active: data.active } : {}),
-
-        ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
-
-        ...(data.seoDescription !== undefined
-          ? { seoDescription: data.seoDescription }
-          : {}),
-
-        ...(data.subcategoryId
+        ...(data.available !== undefined
           ? {
+              available: data.available,
+            }
+          : {}),
+
+        ...(data.featured !== undefined
+          ? {
+              featured: data.featured,
+            }
+          : {}),
+      },
+
+      include: {
+        subcategory: {
+          include: {
+            category: true,
+          },
+        },
+
+        images: {
+          orderBy: {
+            sortOrder: "asc",
+          },
+        },
+      },
+    });
+
+    return serializeProduct(product);
+  },
+};
+
+function createProductSlug(title: string) {
+  return title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+```
+
+## src\services\search-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+export const searchService = {
+  async search(query: string) {
+    const search = query.trim();
+
+    if (!search) {
+      return {
+        products: [],
+        categories: [],
+        subcategories: [],
+      };
+    }
+
+    const [products, categories, subcategories] = await Promise.all([
+      prisma.product.findMany({
+        where: {
+          active: true,
+          available: true,
+          OR: [
+            {
+              title: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              shortDescription: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
               subcategory: {
-                connect: {
-                  id: data.subcategoryId,
+                name: {
+                  contains: search,
+                  mode: "insensitive",
                 },
               },
-            }
-          : {}),
-
-        ...(data.marketplaceId
-          ? {
-              marketplace: {
-                connect: {
-                  id: data.marketplaceId,
+            },
+            {
+              subcategory: {
+                category: {
+                  name: {
+                    contains: search,
+                    mode: "insensitive",
+                  },
                 },
               },
-            }
-          : {}),
-      },
-    });
-  },
+            },
+          ],
+        },
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
+          },
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 20,
+      }),
 
-  async updateStatus(
-    id: string,
-    data: {
-      active?: boolean | undefined;
-      available?: boolean | undefined;
-      featured?: boolean | undefined;
-    },
-  ) {
-    return prisma.product.update({
-      where: { id },
+      prisma.category.findMany({
+        where: {
+          active: true,
+          OR: [
+            {
+              name: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+          ],
+        },
+        orderBy: {
+          sortOrder: "asc",
+        },
+        take: 20,
+      }),
 
-      data: {
-        ...(data.active !== undefined ? { active: data.active } : {}),
+      prisma.subcategory.findMany({
+        where: {
+          active: true,
+          OR: [
+            {
+              name: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+            {
+              description: {
+                contains: search,
+                mode: "insensitive",
+              },
+            },
+          ],
+        },
+        include: {
+          category: true,
+        },
+        orderBy: {
+          sortOrder: "asc",
+        },
+        take: 20,
+      }),
+    ]);
 
-        ...(data.available !== undefined ? { available: data.available } : {}),
+    return {
+      products: products.map((product) => {
+        const { subcategory, ...productData } = product;
 
-        ...(data.featured !== undefined ? { featured: data.featured } : {}),
-      },
-    });
+        return {
+          ...productData,
+          category: subcategory?.category?.name ?? null,
+        };
+      }),
+
+      categories,
+
+      subcategories,
+    };
   },
 };
 
