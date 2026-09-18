@@ -1,3 +1,4 @@
+# WORLD MIX 360 - API
 
 ## .env
 
@@ -13,8 +14,8 @@ PRODUCT_SYNC_SECRET=3ee7524986e159cb3c02a833149821f25ede1614dc0944ded3451cd550c0
 
 ```ts
 export declare const env: {
-    DATABASE_URL: string;
-    JWT_SECRET: string;
+  DATABASE_URL: string;
+  JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -31,7 +32,6 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
-
 ```
 
 ## env.ts
@@ -53,7 +53,6 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-
 ```
 
 ## package.json
@@ -101,7 +100,6 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
-
 ```
 
 ## prisma7.config.ts
@@ -119,7 +117,6 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
-
 ```
 
 ## README.md
@@ -186,7 +183,6 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
-
 ## skills-lock.json
 
 ```json
@@ -249,7 +245,6 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
-
 ```
 
 ## src\app.ts
@@ -294,7 +289,6 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
-
 ```
 
 ## src\configs\auth.ts
@@ -315,7 +309,6 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
-
 ```
 
 ## src\configs\mercado-livre.ts
@@ -342,7 +335,513 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
+```
 
+## src\controllers\blog-categories-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+import { blogCategoriesService } from "@/services/blog-categories-service";
+import { createSlug } from "@/utils/createSlug";
+
+const createBlogCategorySchema = z.object({
+  name: z.string().trim().min(1, "O nome da categoria é obrigatório"),
+  description: z.string().trim().optional(),
+  image: z.string().trim().url("A imagem deve ser uma URL válida").optional(),
+  active: z.coerce.boolean().optional(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
+const updateBlogCategorySchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "O nome da categoria é obrigatório")
+    .optional(),
+  description: z.string().trim().optional(),
+  image: z.string().trim().url("A imagem deve ser uma URL válida").optional(),
+  active: z.coerce.boolean().optional(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
+const idSchema = z.object({
+  id: z.string().uuid("ID da categoria do blog inválido"),
+});
+
+const slugSchema = z.object({
+  slug: z.string().trim().min(1, "Slug inválido"),
+});
+
+export class BlogCategoriesController {
+  async index(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        active: z
+          .enum(["true", "false"])
+          .transform((value) => value === "true")
+          .optional(),
+      })
+      .parse(request.query);
+
+    const categories = await blogCategoriesService.list({
+      ...(query.search !== undefined
+        ? {
+            search: query.search,
+          }
+        : {}),
+      ...(query.active !== undefined
+        ? {
+            active: query.active,
+          }
+        : {}),
+    });
+
+    return response.json({
+      categories,
+    });
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const category = await blogCategoriesService.findById(id);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    return response.json({
+      category,
+    });
+  }
+
+  async showBySlug(request: Request, response: Response) {
+    const { slug } = slugSchema.parse(request.params);
+
+    const category = await blogCategoriesService.findBySlug(slug);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    return response.json({
+      category,
+    });
+  }
+
+  async create(request: Request, response: Response) {
+    const data = createBlogCategorySchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingCategory = await blogCategoriesService.findBySlug(slug);
+
+    if (existingCategory) {
+      return response.status(409).json({
+        message: "Já existe uma categoria do blog com esse nome.",
+      });
+    }
+
+    const category = await blogCategoriesService.create({
+      name: data.name,
+      ...(data.description !== undefined
+        ? {
+            description: data.description,
+          }
+        : {}),
+      ...(data.image !== undefined
+        ? {
+            image: data.image,
+          }
+        : {}),
+      ...(data.active !== undefined
+        ? {
+            active: data.active,
+          }
+        : {}),
+      ...(data.sortOrder !== undefined
+        ? {
+            sortOrder: data.sortOrder,
+          }
+        : {}),
+    });
+
+    return response.status(201).json({
+      category,
+    });
+  }
+
+  async update(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+    const data = updateBlogCategorySchema.parse(request.body);
+
+    const category = await blogCategoriesService.findById(id);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    let slug: string | undefined;
+
+    if (data.name !== undefined && data.name !== category.name) {
+      slug = createSlug(data.name);
+
+      const existingCategory = await blogCategoriesService.findBySlugExceptId(
+        slug,
+        category.id,
+      );
+
+      if (existingCategory) {
+        return response.status(409).json({
+          message: "Já existe uma categoria do blog com esse nome.",
+        });
+      }
+    }
+
+    const updatedCategory = await blogCategoriesService.update(category.id, {
+      ...(data.name !== undefined
+        ? {
+            name: data.name,
+          }
+        : {}),
+      ...(slug !== undefined
+        ? {
+            slug,
+          }
+        : {}),
+      ...(data.description !== undefined
+        ? {
+            description: data.description,
+          }
+        : {}),
+      ...(data.image !== undefined
+        ? {
+            image: data.image,
+          }
+        : {}),
+      ...(data.active !== undefined
+        ? {
+            active: data.active,
+          }
+        : {}),
+      ...(data.sortOrder !== undefined
+        ? {
+            sortOrder: data.sortOrder,
+          }
+        : {}),
+    });
+
+    return response.json({
+      category: updatedCategory,
+    });
+  }
+
+  async delete(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const category = await blogCategoriesService.findById(id);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    await blogCategoriesService.delete(category.id);
+
+    return response.status(204).send();
+  }
+}
+```
+
+## src\controllers\blog-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+import { BlogPostStatus } from "@/generated/prisma/client";
+import { blogService } from "@/services/blog-service";
+import { createSlug } from "@/utils/createSlug";
+
+const blogPostProductSchema = z.object({
+  productId: z.string().uuid("ID do produto inválido"),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
+const createBlogPostSchema = z.object({
+  title: z.string().trim().min(1, "O título é obrigatório"),
+  excerpt: z.string().trim().optional(),
+  content: z.string().trim().min(1, "O conteúdo é obrigatório"),
+  coverImage: z.string().trim().url().optional(),
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+
+  status: z.enum(BlogPostStatus).default(BlogPostStatus.DRAFT),
+
+  publishedAt: z.coerce.date().optional(),
+  scheduledAt: z.coerce.date().optional(),
+
+  categoryId: z.string().uuid("ID da categoria do blog inválido").optional(),
+
+  products: z.array(blogPostProductSchema).optional(),
+});
+
+const updateBlogPostSchema = z.object({
+  title: z.string().trim().min(1, "O título é obrigatório").optional(),
+  excerpt: z.string().trim().optional(),
+  content: z.string().trim().min(1, "O conteúdo é obrigatório").optional(),
+  coverImage: z.string().trim().url().optional(),
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+
+  status: z.enum(BlogPostStatus).optional(),
+
+  publishedAt: z.coerce.date().optional(),
+  scheduledAt: z.coerce.date().optional(),
+
+  categoryId: z.string().uuid("ID da categoria do blog inválido").optional(),
+
+  products: z.array(blogPostProductSchema).optional(),
+});
+
+const idSchema = z.object({
+  id: z.string().uuid("ID do post inválido"),
+});
+
+const slugSchema = z.object({
+  slug: z.string().trim().min(1, "Slug inválido"),
+});
+
+export class BlogController {
+  async index(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        categoryId: z.string().uuid().optional(),
+      })
+      .parse(request.query);
+
+    const posts = await blogService.list({
+      ...(query.search !== undefined ? { search: query.search } : {}),
+
+      ...(query.categoryId !== undefined
+        ? { categoryId: query.categoryId }
+        : {}),
+    });
+
+    return response.json({
+      posts,
+    });
+  }
+
+  async indexAdmin(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        categoryId: z.string().uuid().optional(),
+        status: z.enum(BlogPostStatus).optional(),
+      })
+      .parse(request.query);
+
+    const posts = await blogService.listAdmin({
+      ...(query.search !== undefined ? { search: query.search } : {}),
+
+      ...(query.categoryId !== undefined
+        ? { categoryId: query.categoryId }
+        : {}),
+
+      ...(query.status !== undefined ? { status: query.status } : {}),
+    });
+
+    return response.json({
+      posts,
+    });
+  }
+
+  async create(request: Request, response: Response) {
+    const data = createBlogPostSchema.parse(request.body);
+
+    const slug = createSlug(data.title);
+
+    const existingPost = await blogService.findBySlug(slug);
+
+    if (existingPost) {
+      return response.status(409).json({
+        message: "Já existe um post com esse título.",
+      });
+    }
+
+    const post = await blogService.create({
+      title: data.title,
+      content: data.content,
+      authorId: request.user.id,
+
+      ...(data.excerpt !== undefined ? { excerpt: data.excerpt } : {}),
+
+      ...(data.coverImage !== undefined ? { coverImage: data.coverImage } : {}),
+
+      ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+      ...(data.seoDescription !== undefined
+        ? { seoDescription: data.seoDescription }
+        : {}),
+
+      ...(data.status !== undefined ? { status: data.status } : {}),
+
+      ...(data.publishedAt !== undefined
+        ? { publishedAt: data.publishedAt }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? { scheduledAt: data.scheduledAt }
+        : {}),
+
+      ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
+
+      ...(data.products !== undefined
+        ? {
+            products: data.products.map((product) => ({
+              productId: product.productId,
+              ...(product.sortOrder !== undefined
+                ? { sortOrder: product.sortOrder }
+                : {}),
+            })),
+          }
+        : {}),
+    });
+
+    return response.status(201).json({
+      post,
+    });
+  }
+
+  async update(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const data = updateBlogPostSchema.parse(request.body);
+
+    const post = await blogService.findById(id);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    if (data.title && data.title !== post.title) {
+      const slug = createSlug(data.title);
+
+      const existingPost = await blogService.findBySlugExceptId(slug, post.id);
+
+      if (existingPost) {
+        return response.status(409).json({
+          message: "Já existe um post com esse título.",
+        });
+      }
+    }
+
+    const updatedPost = await blogService.update(post.id, {
+      ...(data.title !== undefined ? { title: data.title } : {}),
+
+      ...(data.excerpt !== undefined ? { excerpt: data.excerpt } : {}),
+
+      ...(data.content !== undefined ? { content: data.content } : {}),
+
+      ...(data.coverImage !== undefined ? { coverImage: data.coverImage } : {}),
+
+      ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+      ...(data.seoDescription !== undefined
+        ? { seoDescription: data.seoDescription }
+        : {}),
+
+      ...(data.status !== undefined ? { status: data.status } : {}),
+
+      ...(data.publishedAt !== undefined
+        ? { publishedAt: data.publishedAt }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? { scheduledAt: data.scheduledAt }
+        : {}),
+
+      ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
+
+      ...(data.products !== undefined
+        ? {
+            products: data.products.map((product) => ({
+              productId: product.productId,
+              ...(product.sortOrder !== undefined
+                ? { sortOrder: product.sortOrder }
+                : {}),
+            })),
+          }
+        : {}),
+    });
+
+    return response.json({
+      post: updatedPost,
+    });
+  }
+
+  async delete(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const post = await blogService.findById(id);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    await blogService.delete(post.id);
+
+    return response.status(204).send();
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const post = await blogService.findById(id);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    return response.json({
+      post,
+    });
+  }
+
+  async show(request: Request, response: Response) {
+    const { slug } = slugSchema.parse(request.params);
+
+    const post = await blogService.findBySlug(slug);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    return response.json({
+      post,
+    });
+  }
+}
 ```
 
 ## src\controllers\categories-controllers.ts
@@ -495,7 +994,6 @@ export class CategoryController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\marketplace-controller.ts
@@ -687,7 +1185,6 @@ export class MarketplaceController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -728,7 +1225,6 @@ export class MercadoLivreController {
     });
   }
 }
-
 ```
 
 ## src\controllers\products-controller.ts
@@ -963,7 +1459,6 @@ export class ProductsController {
     return response.json({ product });
   }
 }
-
 ```
 
 ## src\controllers\search-controller.ts
@@ -994,7 +1489,6 @@ export class SearchController {
     });
   }
 }
-
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -1042,7 +1536,6 @@ class SessionsController {
 }
 
 export { SessionsController };
-
 ```
 
 ## src\controllers\subcategories-controller.ts
@@ -1231,7 +1724,6 @@ export class SubcategoriesController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\users-controllers.ts
@@ -1348,7 +1840,6 @@ class UserController {
 }
 
 export { UserController };
-
 ```
 
 ## src\database\prisma.ts
@@ -1369,7 +1860,6 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
-
 ```
 
 ## src\middleware\ensure-admin.ts
@@ -1390,7 +1880,6 @@ export function ensureAdmin(
 
   return next();
 }
-
 ```
 
 ## src\middleware\ensure-authenticated.ts
@@ -1437,7 +1926,6 @@ export function ensureAuthenticated(
     throw new AppError("Token inválido ou expirado", 401);
   }
 }
-
 ```
 
 ## src\middleware\error-handling.ts
@@ -1464,7 +1952,114 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
+```
 
+## src\routes\blog-categories-routes.ts
+
+```ts
+import { Router } from "express";
+
+import { BlogCategoriesController } from "@/controllers/blog-categories-controller";
+import { ensureAdmin } from "@/middleware/ensure-admin";
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+
+const blogCategoriesRoutes = Router();
+
+const blogCategoriesController = new BlogCategoriesController();
+
+// Públicas — leitura
+blogCategoriesRoutes.get("/", blogCategoriesController.index);
+
+blogCategoriesRoutes.get("/slug/:slug", blogCategoriesController.showBySlug);
+
+// Administrativas — leitura por ID
+blogCategoriesRoutes.get(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.showById,
+);
+
+// Administrativas — criação
+blogCategoriesRoutes.post(
+  "/",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.create,
+);
+
+// Administrativas — atualização
+blogCategoriesRoutes.put(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.update,
+);
+
+// Administrativas — exclusão
+blogCategoriesRoutes.delete(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.delete,
+);
+
+export { blogCategoriesRoutes };
+```
+
+## src\routes\blog-routes.ts
+
+```ts
+import { Router } from "express";
+
+import { BlogController } from "@/controllers/blog-controller";
+
+import { ensureAdmin } from "@/middleware/ensure-admin";
+
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+
+const blogRoutes = Router();
+
+const blogController = new BlogController();
+
+// Públicas
+
+blogRoutes.get("/", blogController.index);
+
+// Administrativas
+// Devem ficar antes de /:slug para não serem interpretadas como slug.
+
+blogRoutes.get(
+  "/admin",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogController.indexAdmin,
+);
+
+blogRoutes.get(
+  "/id/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogController.showById,
+);
+
+blogRoutes.post("/", ensureAuthenticated, ensureAdmin, blogController.create);
+
+blogRoutes.put("/:id", ensureAuthenticated, ensureAdmin, blogController.update);
+
+blogRoutes.delete(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogController.delete,
+);
+
+// Pública por slug
+// Deve ficar depois das rotas administrativas específicas.
+
+blogRoutes.get("/:slug", blogController.show);
+
+export { blogRoutes };
 ```
 
 ## src\routes\categories-routes.ts
@@ -1508,15 +2103,17 @@ categoriesRouter.delete(
 );
 
 export { categoriesRouter as categoriesRoutes };
-
 ```
 
 ## src\routes\index.ts
 
 ```ts
 /* src/routes/index.ts */
+
 import { Router } from "express";
+import { blogCategoriesRoutes } from "@/routes/blog-categories-routes";
 import { searchRouter } from "@/routes/search-routes";
+import { blogRoutes } from "./blog-routes";
 import { categoriesRoutes } from "./categories-routes";
 import { marketplaceRoutes } from "./marketplace-routes";
 import { mercadoLivreRoutes } from "./mercado-livre-routes";
@@ -1528,16 +2125,26 @@ import { userRoutes } from "./user-routes";
 const routes = Router();
 
 routes.use("/users", userRoutes);
+
 routes.use("/session", sessionsRoutes);
+
 routes.use("/mercado-livre", mercadoLivreRoutes);
+
 routes.use("/products", productRoutes);
+
 routes.use("/categories", categoriesRoutes);
+
 routes.use("/subcategories", subcategoriesRoutes);
+
 routes.use("/marketplaces", marketplaceRoutes);
+
 routes.use("/search", searchRouter);
 
-export { routes };
+routes.use("/blog/categories", blogCategoriesRoutes);
 
+routes.use("/blog", blogRoutes);
+
+export { routes };
 ```
 
 ## src\routes\marketplace-routes.ts
@@ -1580,7 +2187,6 @@ marketplaceRouter.delete(
 );
 
 export { marketplaceRouter as marketplaceRoutes };
-
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -1597,7 +2203,6 @@ mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
 mercadoLivreRoutes.get("/products", controller.products.bind(controller));
 
 export { mercadoLivreRoutes };
-
 ```
 
 ## src\routes\product-routes.ts
@@ -1664,7 +2269,6 @@ productRoutes.post(
 );
 
 export { productRoutes };
-
 ```
 
 ## src\routes\search-routes.ts
@@ -1681,7 +2285,6 @@ const searchController = new SearchController();
 searchRouter.get("/", searchController.search);
 
 export { searchRouter };
-
 ```
 
 ## src\routes\sessions-routes.ts
@@ -1696,7 +2299,6 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
-
 ```
 
 ## src\routes\subcategories-routes.ts
@@ -1739,7 +2341,6 @@ subcategoriesRouter.delete(
 );
 
 export { subcategoriesRouter as subcategoriesRoutes };
-
 ```
 
 ## src\routes\user-routes.ts
@@ -1771,7 +2372,6 @@ userRoutes.patch(
 userRoutes.put("/:id", ensureAuthenticated, ensureAdmin, userController.update);
 
 export { userRoutes };
-
 ```
 
 ## src\server.ts
@@ -1784,7 +2384,767 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
+```
 
+## src\services\blog-categories-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+interface ListBlogCategoriesParams {
+  search?: string;
+  active?: boolean;
+}
+
+interface CreateBlogCategoryData {
+  name: string;
+  description?: string;
+  image?: string;
+  active?: boolean;
+  sortOrder?: number;
+}
+
+interface UpdateBlogCategoryData {
+  name?: string;
+  description?: string;
+  image?: string;
+  active?: boolean;
+  sortOrder?: number;
+  slug?: string;
+}
+
+function normalizeSlug(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function serializeBlogCategory(category: {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image: string | null;
+  active: boolean;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date | null;
+  _count?: {
+    posts: number;
+  };
+}) {
+  return {
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    image: category.image,
+    active: category.active,
+    sortOrder: category.sortOrder,
+    postsCount: category._count?.posts ?? 0,
+    createdAt: category.createdAt,
+    updatedAt: category.updatedAt,
+  };
+}
+
+const blogCategoryInclude = {
+  _count: {
+    select: {
+      posts: true,
+    },
+  },
+};
+
+export const blogCategoriesService = {
+  async list(params: ListBlogCategoriesParams = {}) {
+    const where = {
+      ...(params.search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: params.search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                description: {
+                  contains: params.search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
+      ...(params.active !== undefined
+        ? {
+            active: params.active,
+          }
+        : {}),
+    };
+
+    const categories = await prisma.blogCategory.findMany({
+      where,
+      include: blogCategoryInclude,
+      orderBy: [
+        {
+          sortOrder: "asc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+    });
+
+    return categories.map(serializeBlogCategory);
+  },
+
+  async findById(id: string) {
+    const category = await prisma.blogCategory.findUnique({
+      where: {
+        id,
+      },
+      include: blogCategoryInclude,
+    });
+
+    if (!category) {
+      return null;
+    }
+
+    return serializeBlogCategory(category);
+  },
+
+  async findBySlug(slug: string) {
+    const category = await prisma.blogCategory.findUnique({
+      where: {
+        slug,
+      },
+      include: blogCategoryInclude,
+    });
+
+    if (!category) {
+      return null;
+    }
+
+    return serializeBlogCategory(category);
+  },
+
+  async findBySlugExceptId(slug: string, id: string) {
+    const category = await prisma.blogCategory.findFirst({
+      where: {
+        slug,
+        NOT: {
+          id,
+        },
+      },
+      include: blogCategoryInclude,
+    });
+
+    if (!category) {
+      return null;
+    }
+
+    return serializeBlogCategory(category);
+  },
+
+  async create(data: CreateBlogCategoryData) {
+    const slug = normalizeSlug(data.name);
+
+    const category = await prisma.blogCategory.create({
+      data: {
+        name: data.name,
+        slug,
+        ...(data.description !== undefined
+          ? {
+              description: data.description,
+            }
+          : {}),
+        ...(data.image !== undefined
+          ? {
+              image: data.image,
+            }
+          : {}),
+        ...(data.active !== undefined
+          ? {
+              active: data.active,
+            }
+          : {}),
+        ...(data.sortOrder !== undefined
+          ? {
+              sortOrder: data.sortOrder,
+            }
+          : {}),
+      },
+      include: blogCategoryInclude,
+    });
+
+    return serializeBlogCategory(category);
+  },
+
+  async update(id: string, data: UpdateBlogCategoryData) {
+    const category = await prisma.blogCategory.update({
+      where: {
+        id,
+      },
+      data: {
+        ...(data.name !== undefined
+          ? {
+              name: data.name,
+            }
+          : {}),
+        ...(data.slug !== undefined
+          ? {
+              slug: data.slug,
+            }
+          : {}),
+        ...(data.description !== undefined
+          ? {
+              description: data.description,
+            }
+          : {}),
+        ...(data.image !== undefined
+          ? {
+              image: data.image,
+            }
+          : {}),
+        ...(data.active !== undefined
+          ? {
+              active: data.active,
+            }
+          : {}),
+        ...(data.sortOrder !== undefined
+          ? {
+              sortOrder: data.sortOrder,
+            }
+          : {}),
+      },
+      include: blogCategoryInclude,
+    });
+
+    return serializeBlogCategory(category);
+  },
+
+  async delete(id: string) {
+    await prisma.blogCategory.delete({
+      where: {
+        id,
+      },
+    });
+  },
+};
+```
+
+## src\services\blog-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+import { BlogPostStatus } from "@/generated/prisma/client";
+
+interface BlogPostProductInput {
+  productId: string;
+  sortOrder?: number;
+}
+
+interface CreateBlogPostInput {
+  title: string;
+  content: string;
+  authorId: string;
+  excerpt?: string;
+  coverImage?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  status?: BlogPostStatus;
+  publishedAt?: Date;
+  scheduledAt?: Date;
+  categoryId?: string;
+  products?: BlogPostProductInput[];
+}
+
+interface UpdateBlogPostInput {
+  title?: string;
+  excerpt?: string;
+  content?: string;
+  coverImage?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  status?: BlogPostStatus;
+  publishedAt?: Date;
+  scheduledAt?: Date;
+  categoryId?: string;
+  products?: BlogPostProductInput[];
+}
+
+interface ListBlogPostsInput {
+  search?: string;
+  categoryId?: string;
+}
+
+interface ListAdminBlogPostsInput {
+  search?: string;
+  categoryId?: string;
+  status?: BlogPostStatus;
+}
+
+const blogPostInclude = {
+  author: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  },
+
+  category: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  },
+
+  products: {
+    orderBy: {
+      sortOrder: "asc" as const,
+    },
+
+    select: {
+      id: true,
+      sortOrder: true,
+
+      product: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          shortDescription: true,
+          imageUrl: true,
+          price: true,
+          originalPrice: true,
+          currency: true,
+          rating: true,
+          reviewsCount: true,
+          affiliateUrl: true,
+          available: true,
+          featured: true,
+          active: true,
+        },
+      },
+    },
+  },
+};
+
+function serializeBlogPost(post: any) {
+  return {
+    ...post,
+
+    products: post.products.map((item: any) => ({
+      id: item.id,
+      sortOrder: item.sortOrder,
+      product: item.product,
+    })),
+  };
+}
+
+function serializeBlogPosts(posts: any[]) {
+  return posts.map(serializeBlogPost);
+}
+
+function createBlogSlug(title: string) {
+  return title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+export const blogService = {
+  async list(input: ListBlogPostsInput = {}) {
+    const where: {
+      status: BlogPostStatus;
+      OR?: Array<{
+        title?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        excerpt?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        content?: {
+          contains: string;
+          mode: "insensitive";
+        };
+      }>;
+      categoryId?: string;
+    } = {
+      status: BlogPostStatus.PUBLISHED,
+    };
+
+    if (input.search !== undefined) {
+      where.OR = [
+        {
+          title: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          excerpt: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          content: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+      ];
+    }
+
+    if (input.categoryId !== undefined) {
+      where.categoryId = input.categoryId;
+    }
+
+    const posts = await prisma.blogPost.findMany({
+      where,
+      include: blogPostInclude,
+      orderBy: {
+        publishedAt: "desc",
+      },
+    });
+
+    return serializeBlogPosts(posts);
+  },
+
+  async listAdmin(input: ListAdminBlogPostsInput = {}) {
+    const where: {
+      OR?: Array<{
+        title?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        excerpt?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        content?: {
+          contains: string;
+          mode: "insensitive";
+        };
+      }>;
+      categoryId?: string;
+      status?: BlogPostStatus;
+    } = {};
+
+    if (input.search !== undefined) {
+      where.OR = [
+        {
+          title: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          excerpt: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          content: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+      ];
+    }
+
+    if (input.categoryId !== undefined) {
+      where.categoryId = input.categoryId;
+    }
+
+    if (input.status !== undefined) {
+      where.status = input.status;
+    }
+
+    const posts = await prisma.blogPost.findMany({
+      where,
+      include: blogPostInclude,
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return serializeBlogPosts(posts);
+  },
+
+  async findById(id: string) {
+    const post = await prisma.blogPost.findUnique({
+      where: {
+        id,
+      },
+      include: blogPostInclude,
+    });
+
+    if (!post) {
+      return null;
+    }
+
+    return serializeBlogPost(post);
+  },
+
+  async findBySlug(slug: string) {
+    const post = await prisma.blogPost.findUnique({
+      where: {
+        slug,
+      },
+      include: blogPostInclude,
+    });
+
+    if (!post) {
+      return null;
+    }
+
+    return serializeBlogPost(post);
+  },
+
+  async findBySlugExceptId(slug: string, id: string) {
+    const post = await prisma.blogPost.findFirst({
+      where: {
+        slug,
+        NOT: {
+          id,
+        },
+      },
+      include: blogPostInclude,
+    });
+
+    if (!post) {
+      return null;
+    }
+
+    return serializeBlogPost(post);
+  },
+
+  async create(data: CreateBlogPostInput) {
+    const postData = {
+      title: data.title,
+      slug: createBlogSlug(data.title),
+      content: data.content,
+
+      author: {
+        connect: {
+          id: data.authorId,
+        },
+      },
+
+      ...(data.excerpt !== undefined
+        ? {
+            excerpt: data.excerpt,
+          }
+        : {}),
+
+      ...(data.coverImage !== undefined
+        ? {
+            coverImage: data.coverImage,
+          }
+        : {}),
+
+      ...(data.seoTitle !== undefined
+        ? {
+            seoTitle: data.seoTitle,
+          }
+        : {}),
+
+      ...(data.seoDescription !== undefined
+        ? {
+            seoDescription: data.seoDescription,
+          }
+        : {}),
+
+      ...(data.status !== undefined
+        ? {
+            status: data.status,
+          }
+        : {}),
+
+      ...(data.publishedAt !== undefined
+        ? {
+            publishedAt: data.publishedAt,
+          }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? {
+            scheduledAt: data.scheduledAt,
+          }
+        : {}),
+
+      ...(data.categoryId !== undefined
+        ? {
+            category: {
+              connect: {
+                id: data.categoryId,
+              },
+            },
+          }
+        : {}),
+
+      ...(data.products !== undefined && data.products.length > 0
+        ? {
+            products: {
+              create: data.products.map((product) => ({
+                sortOrder: product.sortOrder ?? 0,
+
+                product: {
+                  connect: {
+                    id: product.productId,
+                  },
+                },
+              })),
+            },
+          }
+        : {}),
+    };
+
+    const post = await prisma.blogPost.create({
+      data: postData,
+      include: blogPostInclude,
+    });
+
+    return serializeBlogPost(post);
+  },
+
+  async update(id: string, data: UpdateBlogPostInput) {
+    const postData = {
+      ...(data.title !== undefined
+        ? {
+            title: data.title,
+            slug: createBlogSlug(data.title),
+          }
+        : {}),
+
+      ...(data.excerpt !== undefined
+        ? {
+            excerpt: data.excerpt,
+          }
+        : {}),
+
+      ...(data.content !== undefined
+        ? {
+            content: data.content,
+          }
+        : {}),
+
+      ...(data.coverImage !== undefined
+        ? {
+            coverImage: data.coverImage,
+          }
+        : {}),
+
+      ...(data.seoTitle !== undefined
+        ? {
+            seoTitle: data.seoTitle,
+          }
+        : {}),
+
+      ...(data.seoDescription !== undefined
+        ? {
+            seoDescription: data.seoDescription,
+          }
+        : {}),
+
+      ...(data.status !== undefined
+        ? {
+            status: data.status,
+          }
+        : {}),
+
+      ...(data.publishedAt !== undefined
+        ? {
+            publishedAt: data.publishedAt,
+          }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? {
+            scheduledAt: data.scheduledAt,
+          }
+        : {}),
+    };
+
+    const post = await prisma.$transaction(async (transaction) => {
+      if (data.products !== undefined) {
+        await transaction.blogPostProduct.deleteMany({
+          where: {
+            postId: id,
+          },
+        });
+      }
+
+      const updatedPost = await transaction.blogPost.update({
+        where: {
+          id,
+        },
+
+        data: {
+          ...postData,
+
+          ...(data.categoryId !== undefined
+            ? {
+                category: {
+                  connect: {
+                    id: data.categoryId,
+                  },
+                },
+              }
+            : {}),
+
+          ...(data.products !== undefined
+            ? {
+                products: {
+                  create: data.products.map((product) => ({
+                    sortOrder: product.sortOrder ?? 0,
+
+                    product: {
+                      connect: {
+                        id: product.productId,
+                      },
+                    },
+                  })),
+                },
+              }
+            : {}),
+        },
+
+        include: blogPostInclude,
+      });
+
+      return updatedPost;
+    });
+
+    return serializeBlogPost(post);
+  },
+
+  async delete(id: string) {
+    await prisma.blogPost.delete({
+      where: {
+        id,
+      },
+    });
+  },
+};
 ```
 
 ## src\services\categories-service.ts
@@ -1835,7 +3195,6 @@ export const categoryService = {
     });
   },
 };
-
 ```
 
 ## src\services\marketplace-service.ts
@@ -1886,7 +3245,6 @@ export const marketplaceService = {
     });
   },
 };
-
 ```
 
 ## src\services\mercado-livre-service.ts
@@ -2170,7 +3528,6 @@ export async function syncMercadoLivreProducts() {
     orderBy: { updatedAt: "desc" },
   });
 }
-
 ```
 
 ## src\services\products-service.ts
@@ -2827,7 +4184,6 @@ function createProductSlug(title: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
 ```
 
 ## src\services\search-service.ts
@@ -2977,7 +4333,6 @@ export const searchService = {
     };
   },
 };
-
 ```
 
 ## src\services\subcategories-services.ts
@@ -3030,14 +4385,12 @@ export const subcategoriesService = {
     });
   },
 };
-
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
-
 ```
 
 ## src\types\express\index.d.ts
@@ -3051,7 +4404,6 @@ declare namespace Express {
     };
   }
 }
-
 ```
 
 ## src\utils\AppError.ts
@@ -3068,7 +4420,6 @@ class AppError {
 }
 
 export { AppError };
-
 ```
 
 ## src\utils\createSlug.ts
@@ -3089,13 +4440,19 @@ export function createSlug(value: string, suffix?: string) {
 
   return `${slug}-${suffix}`;
 }
-
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -3111,7 +4468,16 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -3120,7 +4486,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js"
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -3133,7 +4499,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -3150,13 +4517,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -3166,7 +4540,6 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
-
 ```
 
 ## tools\instrucoes.md
@@ -3334,11 +4707,9 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
-
 
 ## tools\WorldMix360-API.md
 
-
 ## .env
 
 ```env
@@ -3353,8 +4724,8 @@ PRODUCT_SYNC_SECRET=3ee7524986e159cb3c02a833149821f25ede1614dc0944ded3451cd550c0
 
 ```ts
 export declare const env: {
-    DATABASE_URL: string;
-    JWT_SECRET: string;
+  DATABASE_URL: string;
+  JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -3371,7 +4742,6 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
-
 ```
 
 ## env.ts
@@ -3393,7 +4763,6 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-
 ```
 
 ## package.json
@@ -3441,7 +4810,6 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
-
 ```
 
 ## prisma7.config.ts
@@ -3459,7 +4827,6 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
-
 ```
 
 ## README.md
@@ -3526,7 +4893,6 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
-
 ## skills-lock.json
 
 ```json
@@ -3589,7 +4955,6 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
-
 ```
 
 ## src\app.ts
@@ -3634,7 +4999,6 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
-
 ```
 
 ## src\configs\auth.ts
@@ -3655,7 +5019,6 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
-
 ```
 
 ## src\configs\mercado-livre.ts
@@ -3682,7 +5045,513 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
+```
 
+## src\controllers\blog-categories-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+import { blogCategoriesService } from "@/services/blog-categories-service";
+import { createSlug } from "@/utils/createSlug";
+
+const createBlogCategorySchema = z.object({
+  name: z.string().trim().min(1, "O nome da categoria é obrigatório"),
+  description: z.string().trim().optional(),
+  image: z.string().trim().url("A imagem deve ser uma URL válida").optional(),
+  active: z.coerce.boolean().optional(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
+const updateBlogCategorySchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "O nome da categoria é obrigatório")
+    .optional(),
+  description: z.string().trim().optional(),
+  image: z.string().trim().url("A imagem deve ser uma URL válida").optional(),
+  active: z.coerce.boolean().optional(),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
+const idSchema = z.object({
+  id: z.string().uuid("ID da categoria do blog inválido"),
+});
+
+const slugSchema = z.object({
+  slug: z.string().trim().min(1, "Slug inválido"),
+});
+
+export class BlogCategoriesController {
+  async index(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        active: z
+          .enum(["true", "false"])
+          .transform((value) => value === "true")
+          .optional(),
+      })
+      .parse(request.query);
+
+    const categories = await blogCategoriesService.list({
+      ...(query.search !== undefined
+        ? {
+            search: query.search,
+          }
+        : {}),
+      ...(query.active !== undefined
+        ? {
+            active: query.active,
+          }
+        : {}),
+    });
+
+    return response.json({
+      categories,
+    });
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const category = await blogCategoriesService.findById(id);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    return response.json({
+      category,
+    });
+  }
+
+  async showBySlug(request: Request, response: Response) {
+    const { slug } = slugSchema.parse(request.params);
+
+    const category = await blogCategoriesService.findBySlug(slug);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    return response.json({
+      category,
+    });
+  }
+
+  async create(request: Request, response: Response) {
+    const data = createBlogCategorySchema.parse(request.body);
+
+    const slug = createSlug(data.name);
+
+    const existingCategory = await blogCategoriesService.findBySlug(slug);
+
+    if (existingCategory) {
+      return response.status(409).json({
+        message: "Já existe uma categoria do blog com esse nome.",
+      });
+    }
+
+    const category = await blogCategoriesService.create({
+      name: data.name,
+      ...(data.description !== undefined
+        ? {
+            description: data.description,
+          }
+        : {}),
+      ...(data.image !== undefined
+        ? {
+            image: data.image,
+          }
+        : {}),
+      ...(data.active !== undefined
+        ? {
+            active: data.active,
+          }
+        : {}),
+      ...(data.sortOrder !== undefined
+        ? {
+            sortOrder: data.sortOrder,
+          }
+        : {}),
+    });
+
+    return response.status(201).json({
+      category,
+    });
+  }
+
+  async update(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+    const data = updateBlogCategorySchema.parse(request.body);
+
+    const category = await blogCategoriesService.findById(id);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    let slug: string | undefined;
+
+    if (data.name !== undefined && data.name !== category.name) {
+      slug = createSlug(data.name);
+
+      const existingCategory = await blogCategoriesService.findBySlugExceptId(
+        slug,
+        category.id,
+      );
+
+      if (existingCategory) {
+        return response.status(409).json({
+          message: "Já existe uma categoria do blog com esse nome.",
+        });
+      }
+    }
+
+    const updatedCategory = await blogCategoriesService.update(category.id, {
+      ...(data.name !== undefined
+        ? {
+            name: data.name,
+          }
+        : {}),
+      ...(slug !== undefined
+        ? {
+            slug,
+          }
+        : {}),
+      ...(data.description !== undefined
+        ? {
+            description: data.description,
+          }
+        : {}),
+      ...(data.image !== undefined
+        ? {
+            image: data.image,
+          }
+        : {}),
+      ...(data.active !== undefined
+        ? {
+            active: data.active,
+          }
+        : {}),
+      ...(data.sortOrder !== undefined
+        ? {
+            sortOrder: data.sortOrder,
+          }
+        : {}),
+    });
+
+    return response.json({
+      category: updatedCategory,
+    });
+  }
+
+  async delete(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const category = await blogCategoriesService.findById(id);
+
+    if (!category) {
+      return response.status(404).json({
+        message: "Categoria do blog não encontrada",
+      });
+    }
+
+    await blogCategoriesService.delete(category.id);
+
+    return response.status(204).send();
+  }
+}
+```
+
+## src\controllers\blog-controller.ts
+
+```ts
+import type { Request, Response } from "express";
+import { z } from "zod";
+
+import { BlogPostStatus } from "@/generated/prisma/client";
+import { blogService } from "@/services/blog-service";
+import { createSlug } from "@/utils/createSlug";
+
+const blogPostProductSchema = z.object({
+  productId: z.string().uuid("ID do produto inválido"),
+  sortOrder: z.coerce.number().int().nonnegative().optional(),
+});
+
+const createBlogPostSchema = z.object({
+  title: z.string().trim().min(1, "O título é obrigatório"),
+  excerpt: z.string().trim().optional(),
+  content: z.string().trim().min(1, "O conteúdo é obrigatório"),
+  coverImage: z.string().trim().url().optional(),
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+
+  status: z.enum(BlogPostStatus).default(BlogPostStatus.DRAFT),
+
+  publishedAt: z.coerce.date().optional(),
+  scheduledAt: z.coerce.date().optional(),
+
+  categoryId: z.string().uuid("ID da categoria do blog inválido").optional(),
+
+  products: z.array(blogPostProductSchema).optional(),
+});
+
+const updateBlogPostSchema = z.object({
+  title: z.string().trim().min(1, "O título é obrigatório").optional(),
+  excerpt: z.string().trim().optional(),
+  content: z.string().trim().min(1, "O conteúdo é obrigatório").optional(),
+  coverImage: z.string().trim().url().optional(),
+  seoTitle: z.string().trim().optional(),
+  seoDescription: z.string().trim().optional(),
+
+  status: z.enum(BlogPostStatus).optional(),
+
+  publishedAt: z.coerce.date().optional(),
+  scheduledAt: z.coerce.date().optional(),
+
+  categoryId: z.string().uuid("ID da categoria do blog inválido").optional(),
+
+  products: z.array(blogPostProductSchema).optional(),
+});
+
+const idSchema = z.object({
+  id: z.string().uuid("ID do post inválido"),
+});
+
+const slugSchema = z.object({
+  slug: z.string().trim().min(1, "Slug inválido"),
+});
+
+export class BlogController {
+  async index(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        categoryId: z.string().uuid().optional(),
+      })
+      .parse(request.query);
+
+    const posts = await blogService.list({
+      ...(query.search !== undefined ? { search: query.search } : {}),
+
+      ...(query.categoryId !== undefined
+        ? { categoryId: query.categoryId }
+        : {}),
+    });
+
+    return response.json({
+      posts,
+    });
+  }
+
+  async indexAdmin(request: Request, response: Response) {
+    const query = z
+      .object({
+        search: z.string().trim().optional(),
+        categoryId: z.string().uuid().optional(),
+        status: z.enum(BlogPostStatus).optional(),
+      })
+      .parse(request.query);
+
+    const posts = await blogService.listAdmin({
+      ...(query.search !== undefined ? { search: query.search } : {}),
+
+      ...(query.categoryId !== undefined
+        ? { categoryId: query.categoryId }
+        : {}),
+
+      ...(query.status !== undefined ? { status: query.status } : {}),
+    });
+
+    return response.json({
+      posts,
+    });
+  }
+
+  async create(request: Request, response: Response) {
+    const data = createBlogPostSchema.parse(request.body);
+
+    const slug = createSlug(data.title);
+
+    const existingPost = await blogService.findBySlug(slug);
+
+    if (existingPost) {
+      return response.status(409).json({
+        message: "Já existe um post com esse título.",
+      });
+    }
+
+    const post = await blogService.create({
+      title: data.title,
+      content: data.content,
+      authorId: request.user.id,
+
+      ...(data.excerpt !== undefined ? { excerpt: data.excerpt } : {}),
+
+      ...(data.coverImage !== undefined ? { coverImage: data.coverImage } : {}),
+
+      ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+      ...(data.seoDescription !== undefined
+        ? { seoDescription: data.seoDescription }
+        : {}),
+
+      ...(data.status !== undefined ? { status: data.status } : {}),
+
+      ...(data.publishedAt !== undefined
+        ? { publishedAt: data.publishedAt }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? { scheduledAt: data.scheduledAt }
+        : {}),
+
+      ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
+
+      ...(data.products !== undefined
+        ? {
+            products: data.products.map((product) => ({
+              productId: product.productId,
+              ...(product.sortOrder !== undefined
+                ? { sortOrder: product.sortOrder }
+                : {}),
+            })),
+          }
+        : {}),
+    });
+
+    return response.status(201).json({
+      post,
+    });
+  }
+
+  async update(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const data = updateBlogPostSchema.parse(request.body);
+
+    const post = await blogService.findById(id);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    if (data.title && data.title !== post.title) {
+      const slug = createSlug(data.title);
+
+      const existingPost = await blogService.findBySlugExceptId(slug, post.id);
+
+      if (existingPost) {
+        return response.status(409).json({
+          message: "Já existe um post com esse título.",
+        });
+      }
+    }
+
+    const updatedPost = await blogService.update(post.id, {
+      ...(data.title !== undefined ? { title: data.title } : {}),
+
+      ...(data.excerpt !== undefined ? { excerpt: data.excerpt } : {}),
+
+      ...(data.content !== undefined ? { content: data.content } : {}),
+
+      ...(data.coverImage !== undefined ? { coverImage: data.coverImage } : {}),
+
+      ...(data.seoTitle !== undefined ? { seoTitle: data.seoTitle } : {}),
+
+      ...(data.seoDescription !== undefined
+        ? { seoDescription: data.seoDescription }
+        : {}),
+
+      ...(data.status !== undefined ? { status: data.status } : {}),
+
+      ...(data.publishedAt !== undefined
+        ? { publishedAt: data.publishedAt }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? { scheduledAt: data.scheduledAt }
+        : {}),
+
+      ...(data.categoryId !== undefined ? { categoryId: data.categoryId } : {}),
+
+      ...(data.products !== undefined
+        ? {
+            products: data.products.map((product) => ({
+              productId: product.productId,
+              ...(product.sortOrder !== undefined
+                ? { sortOrder: product.sortOrder }
+                : {}),
+            })),
+          }
+        : {}),
+    });
+
+    return response.json({
+      post: updatedPost,
+    });
+  }
+
+  async delete(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const post = await blogService.findById(id);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    await blogService.delete(post.id);
+
+    return response.status(204).send();
+  }
+
+  async showById(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+
+    const post = await blogService.findById(id);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    return response.json({
+      post,
+    });
+  }
+
+  async show(request: Request, response: Response) {
+    const { slug } = slugSchema.parse(request.params);
+
+    const post = await blogService.findBySlug(slug);
+
+    if (!post) {
+      return response.status(404).json({
+        message: "Post não encontrado",
+      });
+    }
+
+    return response.json({
+      post,
+    });
+  }
+}
 ```
 
 ## src\controllers\categories-controllers.ts
@@ -3835,7 +5704,6 @@ export class CategoryController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\marketplace-controller.ts
@@ -4027,7 +5895,6 @@ export class MarketplaceController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -4068,7 +5935,6 @@ export class MercadoLivreController {
     });
   }
 }
-
 ```
 
 ## src\controllers\products-controller.ts
@@ -4303,7 +6169,6 @@ export class ProductsController {
     return response.json({ product });
   }
 }
-
 ```
 
 ## src\controllers\search-controller.ts
@@ -4334,7 +6199,6 @@ export class SearchController {
     });
   }
 }
-
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -4382,7 +6246,6 @@ class SessionsController {
 }
 
 export { SessionsController };
-
 ```
 
 ## src\controllers\subcategories-controller.ts
@@ -4571,7 +6434,6 @@ export class SubcategoriesController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\users-controllers.ts
@@ -4688,7 +6550,6 @@ class UserController {
 }
 
 export { UserController };
-
 ```
 
 ## src\database\prisma.ts
@@ -4709,7 +6570,6 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
-
 ```
 
 ## src\middleware\ensure-admin.ts
@@ -4730,7 +6590,6 @@ export function ensureAdmin(
 
   return next();
 }
-
 ```
 
 ## src\middleware\ensure-authenticated.ts
@@ -4777,7 +6636,6 @@ export function ensureAuthenticated(
     throw new AppError("Token inválido ou expirado", 401);
   }
 }
-
 ```
 
 ## src\middleware\error-handling.ts
@@ -4804,7 +6662,114 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
+```
 
+## src\routes\blog-categories-routes.ts
+
+```ts
+import { Router } from "express";
+
+import { BlogCategoriesController } from "@/controllers/blog-categories-controller";
+import { ensureAdmin } from "@/middleware/ensure-admin";
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+
+const blogCategoriesRoutes = Router();
+
+const blogCategoriesController = new BlogCategoriesController();
+
+// Públicas — leitura
+blogCategoriesRoutes.get("/", blogCategoriesController.index);
+
+blogCategoriesRoutes.get("/slug/:slug", blogCategoriesController.showBySlug);
+
+// Administrativas — leitura por ID
+blogCategoriesRoutes.get(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.showById,
+);
+
+// Administrativas — criação
+blogCategoriesRoutes.post(
+  "/",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.create,
+);
+
+// Administrativas — atualização
+blogCategoriesRoutes.put(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.update,
+);
+
+// Administrativas — exclusão
+blogCategoriesRoutes.delete(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogCategoriesController.delete,
+);
+
+export { blogCategoriesRoutes };
+```
+
+## src\routes\blog-routes.ts
+
+```ts
+import { Router } from "express";
+
+import { BlogController } from "@/controllers/blog-controller";
+
+import { ensureAdmin } from "@/middleware/ensure-admin";
+
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+
+const blogRoutes = Router();
+
+const blogController = new BlogController();
+
+// Públicas
+
+blogRoutes.get("/", blogController.index);
+
+// Administrativas
+// Devem ficar antes de /:slug para não serem interpretadas como slug.
+
+blogRoutes.get(
+  "/admin",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogController.indexAdmin,
+);
+
+blogRoutes.get(
+  "/id/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogController.showById,
+);
+
+blogRoutes.post("/", ensureAuthenticated, ensureAdmin, blogController.create);
+
+blogRoutes.put("/:id", ensureAuthenticated, ensureAdmin, blogController.update);
+
+blogRoutes.delete(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  blogController.delete,
+);
+
+// Pública por slug
+// Deve ficar depois das rotas administrativas específicas.
+
+blogRoutes.get("/:slug", blogController.show);
+
+export { blogRoutes };
 ```
 
 ## src\routes\categories-routes.ts
@@ -4848,15 +6813,17 @@ categoriesRouter.delete(
 );
 
 export { categoriesRouter as categoriesRoutes };
-
 ```
 
 ## src\routes\index.ts
 
 ```ts
 /* src/routes/index.ts */
+
 import { Router } from "express";
+import { blogCategoriesRoutes } from "@/routes/blog-categories-routes";
 import { searchRouter } from "@/routes/search-routes";
+import { blogRoutes } from "./blog-routes";
 import { categoriesRoutes } from "./categories-routes";
 import { marketplaceRoutes } from "./marketplace-routes";
 import { mercadoLivreRoutes } from "./mercado-livre-routes";
@@ -4868,16 +6835,26 @@ import { userRoutes } from "./user-routes";
 const routes = Router();
 
 routes.use("/users", userRoutes);
+
 routes.use("/session", sessionsRoutes);
+
 routes.use("/mercado-livre", mercadoLivreRoutes);
+
 routes.use("/products", productRoutes);
+
 routes.use("/categories", categoriesRoutes);
+
 routes.use("/subcategories", subcategoriesRoutes);
+
 routes.use("/marketplaces", marketplaceRoutes);
+
 routes.use("/search", searchRouter);
 
-export { routes };
+routes.use("/blog/categories", blogCategoriesRoutes);
 
+routes.use("/blog", blogRoutes);
+
+export { routes };
 ```
 
 ## src\routes\marketplace-routes.ts
@@ -4920,7 +6897,6 @@ marketplaceRouter.delete(
 );
 
 export { marketplaceRouter as marketplaceRoutes };
-
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -4937,7 +6913,6 @@ mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
 mercadoLivreRoutes.get("/products", controller.products.bind(controller));
 
 export { mercadoLivreRoutes };
-
 ```
 
 ## src\routes\product-routes.ts
@@ -5004,7 +6979,6 @@ productRoutes.post(
 );
 
 export { productRoutes };
-
 ```
 
 ## src\routes\search-routes.ts
@@ -5021,7 +6995,6 @@ const searchController = new SearchController();
 searchRouter.get("/", searchController.search);
 
 export { searchRouter };
-
 ```
 
 ## src\routes\sessions-routes.ts
@@ -5036,7 +7009,6 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
-
 ```
 
 ## src\routes\subcategories-routes.ts
@@ -5079,7 +7051,6 @@ subcategoriesRouter.delete(
 );
 
 export { subcategoriesRouter as subcategoriesRoutes };
-
 ```
 
 ## src\routes\user-routes.ts
@@ -5111,7 +7082,6 @@ userRoutes.patch(
 userRoutes.put("/:id", ensureAuthenticated, ensureAdmin, userController.update);
 
 export { userRoutes };
-
 ```
 
 ## src\server.ts
@@ -5124,7 +7094,767 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
+```
 
+## src\services\blog-categories-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+
+interface ListBlogCategoriesParams {
+  search?: string;
+  active?: boolean;
+}
+
+interface CreateBlogCategoryData {
+  name: string;
+  description?: string;
+  image?: string;
+  active?: boolean;
+  sortOrder?: number;
+}
+
+interface UpdateBlogCategoryData {
+  name?: string;
+  description?: string;
+  image?: string;
+  active?: boolean;
+  sortOrder?: number;
+  slug?: string;
+}
+
+function normalizeSlug(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function serializeBlogCategory(category: {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image: string | null;
+  active: boolean;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date | null;
+  _count?: {
+    posts: number;
+  };
+}) {
+  return {
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    image: category.image,
+    active: category.active,
+    sortOrder: category.sortOrder,
+    postsCount: category._count?.posts ?? 0,
+    createdAt: category.createdAt,
+    updatedAt: category.updatedAt,
+  };
+}
+
+const blogCategoryInclude = {
+  _count: {
+    select: {
+      posts: true,
+    },
+  },
+};
+
+export const blogCategoriesService = {
+  async list(params: ListBlogCategoriesParams = {}) {
+    const where = {
+      ...(params.search
+        ? {
+            OR: [
+              {
+                name: {
+                  contains: params.search,
+                  mode: "insensitive" as const,
+                },
+              },
+              {
+                description: {
+                  contains: params.search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
+      ...(params.active !== undefined
+        ? {
+            active: params.active,
+          }
+        : {}),
+    };
+
+    const categories = await prisma.blogCategory.findMany({
+      where,
+      include: blogCategoryInclude,
+      orderBy: [
+        {
+          sortOrder: "asc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+    });
+
+    return categories.map(serializeBlogCategory);
+  },
+
+  async findById(id: string) {
+    const category = await prisma.blogCategory.findUnique({
+      where: {
+        id,
+      },
+      include: blogCategoryInclude,
+    });
+
+    if (!category) {
+      return null;
+    }
+
+    return serializeBlogCategory(category);
+  },
+
+  async findBySlug(slug: string) {
+    const category = await prisma.blogCategory.findUnique({
+      where: {
+        slug,
+      },
+      include: blogCategoryInclude,
+    });
+
+    if (!category) {
+      return null;
+    }
+
+    return serializeBlogCategory(category);
+  },
+
+  async findBySlugExceptId(slug: string, id: string) {
+    const category = await prisma.blogCategory.findFirst({
+      where: {
+        slug,
+        NOT: {
+          id,
+        },
+      },
+      include: blogCategoryInclude,
+    });
+
+    if (!category) {
+      return null;
+    }
+
+    return serializeBlogCategory(category);
+  },
+
+  async create(data: CreateBlogCategoryData) {
+    const slug = normalizeSlug(data.name);
+
+    const category = await prisma.blogCategory.create({
+      data: {
+        name: data.name,
+        slug,
+        ...(data.description !== undefined
+          ? {
+              description: data.description,
+            }
+          : {}),
+        ...(data.image !== undefined
+          ? {
+              image: data.image,
+            }
+          : {}),
+        ...(data.active !== undefined
+          ? {
+              active: data.active,
+            }
+          : {}),
+        ...(data.sortOrder !== undefined
+          ? {
+              sortOrder: data.sortOrder,
+            }
+          : {}),
+      },
+      include: blogCategoryInclude,
+    });
+
+    return serializeBlogCategory(category);
+  },
+
+  async update(id: string, data: UpdateBlogCategoryData) {
+    const category = await prisma.blogCategory.update({
+      where: {
+        id,
+      },
+      data: {
+        ...(data.name !== undefined
+          ? {
+              name: data.name,
+            }
+          : {}),
+        ...(data.slug !== undefined
+          ? {
+              slug: data.slug,
+            }
+          : {}),
+        ...(data.description !== undefined
+          ? {
+              description: data.description,
+            }
+          : {}),
+        ...(data.image !== undefined
+          ? {
+              image: data.image,
+            }
+          : {}),
+        ...(data.active !== undefined
+          ? {
+              active: data.active,
+            }
+          : {}),
+        ...(data.sortOrder !== undefined
+          ? {
+              sortOrder: data.sortOrder,
+            }
+          : {}),
+      },
+      include: blogCategoryInclude,
+    });
+
+    return serializeBlogCategory(category);
+  },
+
+  async delete(id: string) {
+    await prisma.blogCategory.delete({
+      where: {
+        id,
+      },
+    });
+  },
+};
+```
+
+## src\services\blog-service.ts
+
+```ts
+import { prisma } from "@/database/prisma";
+import { BlogPostStatus } from "@/generated/prisma/client";
+
+interface BlogPostProductInput {
+  productId: string;
+  sortOrder?: number;
+}
+
+interface CreateBlogPostInput {
+  title: string;
+  content: string;
+  authorId: string;
+  excerpt?: string;
+  coverImage?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  status?: BlogPostStatus;
+  publishedAt?: Date;
+  scheduledAt?: Date;
+  categoryId?: string;
+  products?: BlogPostProductInput[];
+}
+
+interface UpdateBlogPostInput {
+  title?: string;
+  excerpt?: string;
+  content?: string;
+  coverImage?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  status?: BlogPostStatus;
+  publishedAt?: Date;
+  scheduledAt?: Date;
+  categoryId?: string;
+  products?: BlogPostProductInput[];
+}
+
+interface ListBlogPostsInput {
+  search?: string;
+  categoryId?: string;
+}
+
+interface ListAdminBlogPostsInput {
+  search?: string;
+  categoryId?: string;
+  status?: BlogPostStatus;
+}
+
+const blogPostInclude = {
+  author: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  },
+
+  category: {
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+    },
+  },
+
+  products: {
+    orderBy: {
+      sortOrder: "asc" as const,
+    },
+
+    select: {
+      id: true,
+      sortOrder: true,
+
+      product: {
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          shortDescription: true,
+          imageUrl: true,
+          price: true,
+          originalPrice: true,
+          currency: true,
+          rating: true,
+          reviewsCount: true,
+          affiliateUrl: true,
+          available: true,
+          featured: true,
+          active: true,
+        },
+      },
+    },
+  },
+};
+
+function serializeBlogPost(post: any) {
+  return {
+    ...post,
+
+    products: post.products.map((item: any) => ({
+      id: item.id,
+      sortOrder: item.sortOrder,
+      product: item.product,
+    })),
+  };
+}
+
+function serializeBlogPosts(posts: any[]) {
+  return posts.map(serializeBlogPost);
+}
+
+function createBlogSlug(title: string) {
+  return title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+export const blogService = {
+  async list(input: ListBlogPostsInput = {}) {
+    const where: {
+      status: BlogPostStatus;
+      OR?: Array<{
+        title?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        excerpt?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        content?: {
+          contains: string;
+          mode: "insensitive";
+        };
+      }>;
+      categoryId?: string;
+    } = {
+      status: BlogPostStatus.PUBLISHED,
+    };
+
+    if (input.search !== undefined) {
+      where.OR = [
+        {
+          title: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          excerpt: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          content: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+      ];
+    }
+
+    if (input.categoryId !== undefined) {
+      where.categoryId = input.categoryId;
+    }
+
+    const posts = await prisma.blogPost.findMany({
+      where,
+      include: blogPostInclude,
+      orderBy: {
+        publishedAt: "desc",
+      },
+    });
+
+    return serializeBlogPosts(posts);
+  },
+
+  async listAdmin(input: ListAdminBlogPostsInput = {}) {
+    const where: {
+      OR?: Array<{
+        title?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        excerpt?: {
+          contains: string;
+          mode: "insensitive";
+        };
+        content?: {
+          contains: string;
+          mode: "insensitive";
+        };
+      }>;
+      categoryId?: string;
+      status?: BlogPostStatus;
+    } = {};
+
+    if (input.search !== undefined) {
+      where.OR = [
+        {
+          title: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          excerpt: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+        {
+          content: {
+            contains: input.search,
+            mode: "insensitive",
+          },
+        },
+      ];
+    }
+
+    if (input.categoryId !== undefined) {
+      where.categoryId = input.categoryId;
+    }
+
+    if (input.status !== undefined) {
+      where.status = input.status;
+    }
+
+    const posts = await prisma.blogPost.findMany({
+      where,
+      include: blogPostInclude,
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    return serializeBlogPosts(posts);
+  },
+
+  async findById(id: string) {
+    const post = await prisma.blogPost.findUnique({
+      where: {
+        id,
+      },
+      include: blogPostInclude,
+    });
+
+    if (!post) {
+      return null;
+    }
+
+    return serializeBlogPost(post);
+  },
+
+  async findBySlug(slug: string) {
+    const post = await prisma.blogPost.findUnique({
+      where: {
+        slug,
+      },
+      include: blogPostInclude,
+    });
+
+    if (!post) {
+      return null;
+    }
+
+    return serializeBlogPost(post);
+  },
+
+  async findBySlugExceptId(slug: string, id: string) {
+    const post = await prisma.blogPost.findFirst({
+      where: {
+        slug,
+        NOT: {
+          id,
+        },
+      },
+      include: blogPostInclude,
+    });
+
+    if (!post) {
+      return null;
+    }
+
+    return serializeBlogPost(post);
+  },
+
+  async create(data: CreateBlogPostInput) {
+    const postData = {
+      title: data.title,
+      slug: createBlogSlug(data.title),
+      content: data.content,
+
+      author: {
+        connect: {
+          id: data.authorId,
+        },
+      },
+
+      ...(data.excerpt !== undefined
+        ? {
+            excerpt: data.excerpt,
+          }
+        : {}),
+
+      ...(data.coverImage !== undefined
+        ? {
+            coverImage: data.coverImage,
+          }
+        : {}),
+
+      ...(data.seoTitle !== undefined
+        ? {
+            seoTitle: data.seoTitle,
+          }
+        : {}),
+
+      ...(data.seoDescription !== undefined
+        ? {
+            seoDescription: data.seoDescription,
+          }
+        : {}),
+
+      ...(data.status !== undefined
+        ? {
+            status: data.status,
+          }
+        : {}),
+
+      ...(data.publishedAt !== undefined
+        ? {
+            publishedAt: data.publishedAt,
+          }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? {
+            scheduledAt: data.scheduledAt,
+          }
+        : {}),
+
+      ...(data.categoryId !== undefined
+        ? {
+            category: {
+              connect: {
+                id: data.categoryId,
+              },
+            },
+          }
+        : {}),
+
+      ...(data.products !== undefined && data.products.length > 0
+        ? {
+            products: {
+              create: data.products.map((product) => ({
+                sortOrder: product.sortOrder ?? 0,
+
+                product: {
+                  connect: {
+                    id: product.productId,
+                  },
+                },
+              })),
+            },
+          }
+        : {}),
+    };
+
+    const post = await prisma.blogPost.create({
+      data: postData,
+      include: blogPostInclude,
+    });
+
+    return serializeBlogPost(post);
+  },
+
+  async update(id: string, data: UpdateBlogPostInput) {
+    const postData = {
+      ...(data.title !== undefined
+        ? {
+            title: data.title,
+            slug: createBlogSlug(data.title),
+          }
+        : {}),
+
+      ...(data.excerpt !== undefined
+        ? {
+            excerpt: data.excerpt,
+          }
+        : {}),
+
+      ...(data.content !== undefined
+        ? {
+            content: data.content,
+          }
+        : {}),
+
+      ...(data.coverImage !== undefined
+        ? {
+            coverImage: data.coverImage,
+          }
+        : {}),
+
+      ...(data.seoTitle !== undefined
+        ? {
+            seoTitle: data.seoTitle,
+          }
+        : {}),
+
+      ...(data.seoDescription !== undefined
+        ? {
+            seoDescription: data.seoDescription,
+          }
+        : {}),
+
+      ...(data.status !== undefined
+        ? {
+            status: data.status,
+          }
+        : {}),
+
+      ...(data.publishedAt !== undefined
+        ? {
+            publishedAt: data.publishedAt,
+          }
+        : {}),
+
+      ...(data.scheduledAt !== undefined
+        ? {
+            scheduledAt: data.scheduledAt,
+          }
+        : {}),
+    };
+
+    const post = await prisma.$transaction(async (transaction) => {
+      if (data.products !== undefined) {
+        await transaction.blogPostProduct.deleteMany({
+          where: {
+            postId: id,
+          },
+        });
+      }
+
+      const updatedPost = await transaction.blogPost.update({
+        where: {
+          id,
+        },
+
+        data: {
+          ...postData,
+
+          ...(data.categoryId !== undefined
+            ? {
+                category: {
+                  connect: {
+                    id: data.categoryId,
+                  },
+                },
+              }
+            : {}),
+
+          ...(data.products !== undefined
+            ? {
+                products: {
+                  create: data.products.map((product) => ({
+                    sortOrder: product.sortOrder ?? 0,
+
+                    product: {
+                      connect: {
+                        id: product.productId,
+                      },
+                    },
+                  })),
+                },
+              }
+            : {}),
+        },
+
+        include: blogPostInclude,
+      });
+
+      return updatedPost;
+    });
+
+    return serializeBlogPost(post);
+  },
+
+  async delete(id: string) {
+    await prisma.blogPost.delete({
+      where: {
+        id,
+      },
+    });
+  },
+};
 ```
 
 ## src\services\categories-service.ts
@@ -5175,7 +7905,6 @@ export const categoryService = {
     });
   },
 };
-
 ```
 
 ## src\services\marketplace-service.ts
@@ -5226,7 +7955,6 @@ export const marketplaceService = {
     });
   },
 };
-
 ```
 
 ## src\services\mercado-livre-service.ts
@@ -5510,7 +8238,6 @@ export async function syncMercadoLivreProducts() {
     orderBy: { updatedAt: "desc" },
   });
 }
-
 ```
 
 ## src\services\products-service.ts
@@ -6167,7 +8894,6 @@ function createProductSlug(title: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
 ```
 
 ## src\services\search-service.ts
@@ -6317,7 +9043,6 @@ export const searchService = {
     };
   },
 };
-
 ```
 
 ## src\services\subcategories-services.ts
@@ -6370,14 +9095,12 @@ export const subcategoriesService = {
     });
   },
 };
-
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
-
 ```
 
 ## src\types\express\index.d.ts
@@ -6391,7 +9114,6 @@ declare namespace Express {
     };
   }
 }
-
 ```
 
 ## src\utils\AppError.ts
@@ -6408,7 +9130,6 @@ class AppError {
 }
 
 export { AppError };
-
 ```
 
 ## src\utils\createSlug.ts
@@ -6429,13 +9150,19 @@ export function createSlug(value: string, suffix?: string) {
 
   return `${slug}-${suffix}`;
 }
-
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -6451,7 +9178,16 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -6460,7 +9196,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js"
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -6473,7 +9209,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -6490,13 +9227,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -6506,7 +9250,6 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
-
 ```
 
 ## tools\instrucoes.md
@@ -6674,8 +9417,6 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
-
-
 
 ## tsconfig.json
 
@@ -6712,5 +9453,4 @@ npm run generate-md
   "include": ["src", "src/types", "env.ts"],
   "exclude": ["node_modules", "dist"]
 }
-
 ```
