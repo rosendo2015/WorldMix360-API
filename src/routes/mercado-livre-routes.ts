@@ -3,6 +3,7 @@ import { Router } from "express";
 import { MercadoLivreController } from "@/controllers/mercado-livre-controller";
 import { ensureAdmin } from "@/middleware/ensure-admin";
 import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+import { analyzeMercadoLivrePublicPage } from "@/services/mercado-livre/mercado-livre.service";
 import { findCatalogOfferByItem } from "@/services/mercado-livre-service";
 
 const mercadoLivreRoutes = Router();
@@ -68,6 +69,52 @@ mercadoLivreRoutes.post(
   ensureAuthenticated,
   ensureAdmin,
   controller.importProduct.bind(controller),
+);
+
+/*
+ * Atualiza a oferta vinculada a um produto já existente.
+ *
+ * Importante:
+ * - não cria Product;
+ * - não cria MarketplaceProduct;
+ * - mantém os mesmos IDs;
+ * - atualiza apenas a referência/oferta do Mercado Livre.
+ */
+mercadoLivreRoutes.put(
+  "/products/:productId/offer",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.updateProductOffer.bind(controller),
+);
+
+mercadoLivreRoutes.post(
+  "/products/analyze-page",
+  ensureAuthenticated,
+  ensureAdmin,
+  async (request, response) => {
+    try {
+      const { url } = request.body;
+
+      if (typeof url !== "string" || !url.trim()) {
+        return response.status(400).json({
+          message: "Informe a URL do produto do Mercado Livre.",
+        });
+      }
+
+      const result = await analyzeMercadoLivrePublicPage(url);
+
+      return response.status(200).json(result);
+    } catch (error) {
+      console.error("Erro ao analisar página pública do Mercado Livre:", error);
+
+      return response.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro ao analisar página pública do Mercado Livre.",
+      });
+    }
+  },
 );
 
 mercadoLivreRoutes.post(

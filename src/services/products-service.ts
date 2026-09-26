@@ -20,6 +20,8 @@ type CreateProductInput = {
   subcategoryId: string;
   marketplaceId: string;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   available?: boolean | undefined;
   active?: boolean | undefined;
   seoTitle?: string | undefined;
@@ -41,6 +43,8 @@ type UpdateProductInput = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   available?: boolean | undefined;
   active?: boolean | undefined;
   seoTitle?: string | undefined;
@@ -51,7 +55,11 @@ type ProductStatusInput = {
   active?: boolean | undefined;
   available?: boolean | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
 };
+
+type ProductSort = "recent" | "price_asc" | "price_desc" | "rating";
 
 type ProductQuery = {
   search?: string | undefined;
@@ -59,6 +67,11 @@ type ProductQuery = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: ProductSort | undefined;
 };
 
 type ProductAdminQuery = {
@@ -66,6 +79,8 @@ type ProductAdminQuery = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   active?: boolean | undefined;
   available?: boolean | undefined;
 };
@@ -80,11 +95,34 @@ type ProductWithRelations = {
       slug?: string;
     } | null;
   } | null;
+
   images?: Array<{
     id: string;
     imageUrl: string;
     sortOrder: number;
   }>;
+
+  marketplaceProducts?: Array<{
+    id: string;
+    productId: string;
+    marketplaceId: string;
+    externalId: string;
+    catalogProductId: string | null;
+    itemId: string | null;
+    sellerId: string | null;
+    externalLink: string | null;
+    affiliateUrl: string;
+    price: unknown;
+    originalPrice: unknown;
+    currency: string;
+    rating: unknown;
+    reviewsCount: number;
+    available: boolean;
+    syncStatus: string;
+    lastSyncedAt: Date | null;
+    lastSyncError: string | null;
+  }>;
+
   [key: string]: unknown;
 };
 
@@ -103,92 +141,138 @@ function serializeProducts<T extends ProductWithRelations>(products: T[]) {
 
 export const productsService = {
   async list(query: ProductQuery = {}) {
-    const products = await prisma.product.findMany({
-      where: {
-        active: true,
-        available: true,
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 24;
+    const skip = (page - 1) * limit;
+    const sort = query.sort ?? "recent";
 
-        ...(query.search
-          ? {
-              OR: [
-                {
-                  title: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  description: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
+    const where = {
+      active: true,
+      available: true,
 
-        ...(query.category
-          ? {
-              subcategory: {
-                category: {
-                  OR: [
-                    {
-                      slug: {
-                        equals: query.category,
-                        mode: "insensitive",
-                      },
-                    },
-                    {
-                      name: {
-                        equals: query.category,
-                        mode: "insensitive",
-                      },
-                    },
-                  ],
+      ...(query.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: query.search,
+                  mode: "insensitive" as const,
                 },
               },
-            }
-          : {}),
+              {
+                description: {
+                  contains: query.search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
 
-        ...(query.subcategoryId
-          ? {
-              subcategoryId: query.subcategoryId,
-            }
-          : {}),
+      ...(query.category
+        ? {
+            subcategory: {
+              category: {
+                OR: [
+                  {
+                    slug: {
+                      equals: query.category,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    name: {
+                      equals: query.category,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            },
+          }
+        : {}),
 
-        ...(query.marketplaceId
-          ? {
-              marketplaceId: query.marketplaceId,
-            }
-          : {}),
+      ...(query.subcategoryId
+        ? {
+            subcategoryId: query.subcategoryId,
+          }
+        : {}),
 
-        ...(query.featured !== undefined
-          ? {
-              featured: query.featured,
-            }
-          : {}),
-      },
+      ...(query.marketplaceId
+        ? {
+            marketplaceId: query.marketplaceId,
+          }
+        : {}),
 
-      include: {
-        subcategory: {
-          include: {
-            category: true,
+      ...(query.featured !== undefined
+        ? {
+            featured: query.featured,
+          }
+        : {}),
+
+      ...(query.destaque !== undefined
+        ? {
+            destaque: query.destaque,
+          }
+        : {}),
+
+      ...(query.bestSeller !== undefined
+        ? {
+            bestSeller: query.bestSeller,
+          }
+        : {}),
+    };
+
+    const orderBy =
+      sort === "price_asc"
+        ? { price: "asc" as const }
+        : sort === "price_desc"
+          ? { price: "desc" as const }
+          : sort === "rating"
+            ? { rating: "desc" as const }
+            : { createdAt: "desc" as const };
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
           },
         },
 
-        images: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-        },
-      },
+        orderBy,
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        skip,
+        take: limit,
+      }),
 
-    return serializeProducts(products);
+      prisma.product.count({
+        where,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      products: serializeProducts(products),
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
   },
 
   async listAdmin(query: ProductAdminQuery = {}) {
@@ -228,6 +312,18 @@ export const productsService = {
         ...(query.featured !== undefined
           ? {
               featured: query.featured,
+            }
+          : {}),
+
+        ...(query.destaque !== undefined
+          ? {
+              destaque: query.destaque,
+            }
+          : {}),
+
+        ...(query.bestSeller !== undefined
+          ? {
+              bestSeller: query.bestSeller,
             }
           : {}),
 
@@ -286,6 +382,8 @@ export const productsService = {
             sortOrder: "asc",
           },
         },
+
+        marketplaceProducts: true,
       },
     });
 
@@ -379,6 +477,8 @@ export const productsService = {
 
         available: data.available ?? true,
         featured: data.featured ?? false,
+        destaque: data.destaque ?? false,
+        bestSeller: data.bestSeller ?? false,
         active: data.active ?? true,
 
         ...(data.seoTitle !== undefined
@@ -524,6 +624,18 @@ export const productsService = {
               }
             : {}),
 
+          ...(data.destaque !== undefined
+            ? {
+                destaque: data.destaque,
+              }
+            : {}),
+
+          ...(data.bestSeller !== undefined
+            ? {
+                bestSeller: data.bestSeller,
+              }
+            : {}),
+
           ...(data.active !== undefined
             ? {
                 active: data.active,
@@ -617,6 +729,18 @@ export const productsService = {
         ...(data.featured !== undefined
           ? {
               featured: data.featured,
+            }
+          : {}),
+
+        ...(data.destaque !== undefined
+          ? {
+              destaque: data.destaque,
+            }
+          : {}),
+
+        ...(data.bestSeller !== undefined
+          ? {
+              bestSeller: data.bestSeller,
             }
           : {}),
       },

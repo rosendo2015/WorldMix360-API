@@ -1,7 +1,9 @@
 import { Router } from "express";
 
 import { ProductsController } from "@/controllers/products-controller";
+
 import { ensureAdmin } from "@/middleware/ensure-admin";
+
 import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
 
 const productRoutes = Router();

@@ -10,6 +10,7 @@ import {
   getMercadoLivreProducts,
   importMercadoLivreProduct,
   syncMercadoLivreProducts,
+  updateMercadoLivreProductOffer,
 } from "@/services/mercado-livre-service";
 
 const imageSchema = z.object({
@@ -27,7 +28,7 @@ const importProductSchema = z.object({
 
   subcategoryId: z.string().uuid(),
 
-  title: z.string().optional(),
+  title: z.string().min(1),
   description: z.string().optional(),
   shortDescription: z.string().optional(),
 
@@ -42,11 +43,21 @@ const importProductSchema = z.object({
   reviewsCount: z.number().int().min(0).optional(),
 
   featured: z.boolean().optional(),
+  destaque: z.boolean().optional(),
+  bestSeller: z.boolean().optional(),
   available: z.boolean().optional(),
   active: z.boolean().optional(),
 
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
+});
+
+const updateProductOfferSchema = z.object({
+  externalLink: z.string().url(),
+
+  catalogProductId: z.string().regex(/^MLB\d+$/i),
+  itemId: z.string().regex(/^MLB\d+$/i),
+  sellerId: z.string().regex(/^\d+$/),
 });
 
 export class MercadoLivreController {
@@ -98,7 +109,72 @@ export class MercadoLivreController {
   async importProduct(request: Request, response: Response) {
     const body = importProductSchema.parse(request.body);
 
-    const product = await importMercadoLivreProduct(body);
+    const input = {
+      affiliateUrl: body.affiliateUrl,
+      externalLink: body.externalLink,
+      catalogProductId: body.catalogProductId,
+      itemId: body.itemId,
+      sellerId: body.sellerId,
+      subcategoryId: body.subcategoryId,
+      title: body.title,
+
+      ...(body.description !== undefined
+        ? { description: body.description }
+        : {}),
+
+      ...(body.shortDescription !== undefined
+        ? { shortDescription: body.shortDescription }
+        : {}),
+
+      ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl } : {}),
+
+      ...(body.images !== undefined
+        ? {
+            images: body.images.map((image) =>
+              image.sortOrder !== undefined
+                ? {
+                    imageUrl: image.imageUrl,
+                    sortOrder: image.sortOrder,
+                  }
+                : {
+                    imageUrl: image.imageUrl,
+                  },
+            ),
+          }
+        : {}),
+
+      ...(body.price !== undefined ? { price: body.price } : {}),
+
+      ...(body.originalPrice !== undefined
+        ? { originalPrice: body.originalPrice }
+        : {}),
+
+      ...(body.currency !== undefined ? { currency: body.currency } : {}),
+
+      ...(body.rating !== undefined ? { rating: body.rating } : {}),
+
+      ...(body.reviewsCount !== undefined
+        ? { reviewsCount: body.reviewsCount }
+        : {}),
+
+      ...(body.featured !== undefined ? { featured: body.featured } : {}),
+
+      ...(body.destaque !== undefined ? { destaque: body.destaque } : {}),
+
+      ...(body.bestSeller !== undefined ? { bestSeller: body.bestSeller } : {}),
+
+      ...(body.available !== undefined ? { available: body.available } : {}),
+
+      ...(body.active !== undefined ? { active: body.active } : {}),
+
+      ...(body.seoTitle !== undefined ? { seoTitle: body.seoTitle } : {}),
+
+      ...(body.seoDescription !== undefined
+        ? { seoDescription: body.seoDescription }
+        : {}),
+    };
+
+    const product = await importMercadoLivreProduct(input);
 
     return response.status(201).json({
       message: "Produto do Mercado Livre importado com sucesso",
@@ -106,12 +182,25 @@ export class MercadoLivreController {
     });
   }
 
+  async updateProductOffer(request: Request, response: Response) {
+    const productId = z.string().uuid().parse(request.params.productId);
+
+    const body = updateProductOfferSchema.parse(request.body);
+
+    const product = await updateMercadoLivreProductOffer(productId, body);
+
+    return response.status(200).json({
+      message: "Oferta do Mercado Livre atualizada com sucesso",
+      product,
+    });
+  }
+
   async sync(_request: Request, response: Response) {
-    const products = await syncMercadoLivreProducts();
+    const result = await syncMercadoLivreProducts();
 
     return response.json({
       message: "Produtos do Mercado Livre sincronizados com sucesso",
-      products,
+      products: result.products,
     });
   }
 }

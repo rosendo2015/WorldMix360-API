@@ -1,4 +1,3 @@
-# WORLD MIX 360 - API
 
 ## .env
 
@@ -8,14 +7,20 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=
 JWT_SECRET=r0s3nd0
 
 PRODUCT_SYNC_SECRET=3ee7524986e159cb3c02a833149821f25ede1614dc0944ded3451cd550c04550
+
+MELI_CLIENT_ID=6660819157435013
+
+MELI_CLIENT_SECRET=dEH7J1bZoqqMcEgBKhllAvlnUlyzKQZM
+
+MELI_REDIRECT_URI=https://infrastructure-shorts-stroke-entities.trycloudflare.com/mercado-livre/callback
 ```
 
 ## env.d.ts
 
 ```ts
 export declare const env: {
-  DATABASE_URL: string;
-  JWT_SECRET: string;
+    DATABASE_URL: string;
+    JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -32,6 +37,7 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
+
 ```
 
 ## env.ts
@@ -53,6 +59,7 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
+
 ```
 
 ## package.json
@@ -80,10 +87,12 @@ export const env = envSchema.parse(process.env);
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "bcrypt": "^6.0.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0",
+    "playwright": "^1.63.0",
     "tsconfig-paths": "^4.2.0",
     "zod": "^4.5.4"
   },
@@ -100,6 +109,7 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
+
 ```
 
 ## prisma7.config.ts
@@ -117,6 +127,7 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
+
 ```
 
 ## README.md
@@ -183,6 +194,7 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
+
 ## skills-lock.json
 
 ```json
@@ -245,6 +257,7 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
+
 ```
 
 ## src\app.ts
@@ -289,6 +302,7 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
+
 ```
 
 ## src\configs\auth.ts
@@ -309,6 +323,7 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
+
 ```
 
 ## src\configs\mercado-livre.ts
@@ -335,6 +350,7 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
+
 ```
 
 ## src\controllers\blog-categories-controller.ts
@@ -561,6 +577,7 @@ export class BlogCategoriesController {
     return response.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\blog-controller.ts
@@ -842,6 +859,7 @@ export class BlogController {
     });
   }
 }
+
 ```
 
 ## src\controllers\categories-controllers.ts
@@ -994,6 +1012,7 @@ export class CategoryController {
     return res.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\marketplace-controller.ts
@@ -1185,6 +1204,7 @@ export class MarketplaceController {
     return res.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -1192,12 +1212,65 @@ export class MarketplaceController {
 ```ts
 import type { Request, Response } from "express";
 import { z } from "zod";
+
 import { mercadoLivreConfig } from "@/configs/mercado-livre";
+
 import {
+  analyzeMercadoLivreExternalLink,
   connectMercadoLivre,
   getMercadoLivreAuthorizationUrl,
   getMercadoLivreProducts,
+  importMercadoLivreProduct,
+  syncMercadoLivreProducts,
+  updateMercadoLivreProductOffer,
 } from "@/services/mercado-livre-service";
+
+const imageSchema = z.object({
+  imageUrl: z.string().url(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+const importProductSchema = z.object({
+  affiliateUrl: z.string().url(),
+  externalLink: z.string().url(),
+
+  catalogProductId: z.string().regex(/^MLB\d+$/i),
+  itemId: z.string().regex(/^MLB\d+$/i),
+  sellerId: z.string().regex(/^\d+$/),
+
+  subcategoryId: z.string().uuid(),
+
+  title: z.string().min(1),
+  description: z.string().optional(),
+  shortDescription: z.string().optional(),
+
+  imageUrl: z.string().url().optional(),
+  images: z.array(imageSchema).optional(),
+
+  price: z.number().nonnegative().optional(),
+  originalPrice: z.number().nonnegative().optional(),
+  currency: z.string().min(1).max(10).optional(),
+
+  rating: z.number().min(0).max(5).optional(),
+  reviewsCount: z.number().int().min(0).optional(),
+
+  featured: z.boolean().optional(),
+  destaque: z.boolean().optional(),
+  bestSeller: z.boolean().optional(),
+  available: z.boolean().optional(),
+  active: z.boolean().optional(),
+
+  seoTitle: z.string().optional(),
+  seoDescription: z.string().optional(),
+});
+
+const updateProductOfferSchema = z.object({
+  externalLink: z.string().url(),
+
+  catalogProductId: z.string().regex(/^MLB\d+$/i),
+  itemId: z.string().regex(/^MLB\d+$/i),
+  sellerId: z.string().regex(/^\d+$/),
+});
 
 export class MercadoLivreController {
   authorize(_request: Request, response: Response) {
@@ -1208,9 +1281,14 @@ export class MercadoLivreController {
 
   async callback(request: Request, response: Response) {
     const query = z
-      .object({ code: z.string(), state: z.string() })
+      .object({
+        code: z.string(),
+        state: z.string(),
+      })
       .parse(request.query);
+
     await connectMercadoLivre(query.code, query.state);
+
     return response.redirect(
       `${mercadoLivreConfig.webUrl}/?mercadoLivre=connected`,
     );
@@ -1218,13 +1296,127 @@ export class MercadoLivreController {
 
   async products(request: Request, response: Response) {
     const query = z
-      .object({ search: z.string().optional() })
+      .object({
+        search: z.string().optional(),
+      })
       .parse(request.query);
+
     return response.json({
       products: await getMercadoLivreProducts(query.search),
     });
   }
+
+  async analyzeProduct(request: Request, response: Response) {
+    const body = z
+      .object({
+        externalLink: z.string().url(),
+      })
+      .parse(request.body);
+
+    const result = await analyzeMercadoLivreExternalLink(body.externalLink);
+
+    return response.json(result);
+  }
+
+  async importProduct(request: Request, response: Response) {
+    const body = importProductSchema.parse(request.body);
+
+    const input = {
+      affiliateUrl: body.affiliateUrl,
+      externalLink: body.externalLink,
+      catalogProductId: body.catalogProductId,
+      itemId: body.itemId,
+      sellerId: body.sellerId,
+      subcategoryId: body.subcategoryId,
+      title: body.title,
+
+      ...(body.description !== undefined
+        ? { description: body.description }
+        : {}),
+
+      ...(body.shortDescription !== undefined
+        ? { shortDescription: body.shortDescription }
+        : {}),
+
+      ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl } : {}),
+
+      ...(body.images !== undefined
+        ? {
+            images: body.images.map((image) =>
+              image.sortOrder !== undefined
+                ? {
+                    imageUrl: image.imageUrl,
+                    sortOrder: image.sortOrder,
+                  }
+                : {
+                    imageUrl: image.imageUrl,
+                  },
+            ),
+          }
+        : {}),
+
+      ...(body.price !== undefined ? { price: body.price } : {}),
+
+      ...(body.originalPrice !== undefined
+        ? { originalPrice: body.originalPrice }
+        : {}),
+
+      ...(body.currency !== undefined ? { currency: body.currency } : {}),
+
+      ...(body.rating !== undefined ? { rating: body.rating } : {}),
+
+      ...(body.reviewsCount !== undefined
+        ? { reviewsCount: body.reviewsCount }
+        : {}),
+
+      ...(body.featured !== undefined ? { featured: body.featured } : {}),
+
+      ...(body.destaque !== undefined ? { destaque: body.destaque } : {}),
+
+      ...(body.bestSeller !== undefined ? { bestSeller: body.bestSeller } : {}),
+
+      ...(body.available !== undefined ? { available: body.available } : {}),
+
+      ...(body.active !== undefined ? { active: body.active } : {}),
+
+      ...(body.seoTitle !== undefined ? { seoTitle: body.seoTitle } : {}),
+
+      ...(body.seoDescription !== undefined
+        ? { seoDescription: body.seoDescription }
+        : {}),
+    };
+
+    const product = await importMercadoLivreProduct(input);
+
+    return response.status(201).json({
+      message: "Produto do Mercado Livre importado com sucesso",
+      product,
+    });
+  }
+
+  async updateProductOffer(request: Request, response: Response) {
+    const productId = z.string().uuid().parse(request.params.productId);
+
+    const body = updateProductOfferSchema.parse(request.body);
+
+    const product = await updateMercadoLivreProductOffer(productId, body);
+
+    return response.status(200).json({
+      message: "Oferta do Mercado Livre atualizada com sucesso",
+      product,
+    });
+  }
+
+  async sync(_request: Request, response: Response) {
+    const result = await syncMercadoLivreProducts();
+
+    return response.json({
+      message: "Produtos do Mercado Livre sincronizados com sucesso",
+      products: result.products,
+    });
+  }
 }
+
 ```
 
 ## src\controllers\products-controller.ts
@@ -1258,6 +1450,8 @@ const createProductSchema = z.object({
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
   featured: z.coerce.boolean().default(false),
+  destaque: z.coerce.boolean().default(false),
+  bestSeller: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
   active: z.coerce.boolean().default(true),
   seoTitle: z.string().trim().optional(),
@@ -1279,6 +1473,8 @@ const updateProductSchema = z.object({
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
   featured: z.coerce.boolean().optional(),
+  destaque: z.coerce.boolean().optional(),
+  bestSeller: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
   active: z.coerce.boolean().optional(),
   seoTitle: z.string().trim().optional(),
@@ -1290,12 +1486,16 @@ const updateProductStatusSchema = z
     active: z.coerce.boolean().optional(),
     available: z.coerce.boolean().optional(),
     featured: z.coerce.boolean().optional(),
+    destaque: z.coerce.boolean().optional(),
+    bestSeller: z.coerce.boolean().optional(),
   })
   .refine(
     (data) =>
       data.active !== undefined ||
       data.available !== undefined ||
-      data.featured !== undefined,
+      data.featured !== undefined ||
+      data.destaque !== undefined ||
+      data.bestSeller !== undefined,
     {
       message: "Informe pelo menos um status para atualizar.",
     },
@@ -1322,6 +1522,8 @@ export class ProductsController {
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
+        destaque: z.coerce.boolean().optional(),
+        bestSeller: z.coerce.boolean().optional(),
       })
       .parse(request.query);
 
@@ -1339,6 +1541,8 @@ export class ProductsController {
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
+        destaque: z.coerce.boolean().optional(),
+        bestSeller: z.coerce.boolean().optional(),
         active: z.coerce.boolean().optional(),
         available: z.coerce.boolean().optional(),
       })
@@ -1425,11 +1629,11 @@ export class ProductsController {
       });
     }
 
-    const products = await syncMercadoLivreProducts();
+    const result = await syncMercadoLivreProducts();
 
     return response.json({
-      products,
-      synced: products.length,
+      products: result.products,
+      synced: result.products.length,
     });
   }
 
@@ -1459,6 +1663,7 @@ export class ProductsController {
     return response.json({ product });
   }
 }
+
 ```
 
 ## src\controllers\search-controller.ts
@@ -1489,6 +1694,7 @@ export class SearchController {
     });
   }
 }
+
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -1536,6 +1742,7 @@ class SessionsController {
 }
 
 export { SessionsController };
+
 ```
 
 ## src\controllers\subcategories-controller.ts
@@ -1724,6 +1931,7 @@ export class SubcategoriesController {
     return res.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\users-controllers.ts
@@ -1840,6 +2048,7 @@ class UserController {
 }
 
 export { UserController };
+
 ```
 
 ## src\database\prisma.ts
@@ -1860,6 +2069,7 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
+
 ```
 
 ## src\middleware\ensure-admin.ts
@@ -1880,6 +2090,7 @@ export function ensureAdmin(
 
   return next();
 }
+
 ```
 
 ## src\middleware\ensure-authenticated.ts
@@ -1926,6 +2137,7 @@ export function ensureAuthenticated(
     throw new AppError("Token inválido ou expirado", 401);
   }
 }
+
 ```
 
 ## src\middleware\error-handling.ts
@@ -1952,6 +2164,7 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
+
 ```
 
 ## src\routes\blog-categories-routes.ts
@@ -2005,6 +2218,7 @@ blogCategoriesRoutes.delete(
 );
 
 export { blogCategoriesRoutes };
+
 ```
 
 ## src\routes\blog-routes.ts
@@ -2060,6 +2274,7 @@ blogRoutes.delete(
 blogRoutes.get("/:slug", blogController.show);
 
 export { blogRoutes };
+
 ```
 
 ## src\routes\categories-routes.ts
@@ -2103,6 +2318,7 @@ categoriesRouter.delete(
 );
 
 export { categoriesRouter as categoriesRoutes };
+
 ```
 
 ## src\routes\index.ts
@@ -2145,6 +2361,7 @@ routes.use("/blog/categories", blogCategoriesRoutes);
 routes.use("/blog", blogRoutes);
 
 export { routes };
+
 ```
 
 ## src\routes\marketplace-routes.ts
@@ -2187,22 +2404,140 @@ marketplaceRouter.delete(
 );
 
 export { marketplaceRouter as marketplaceRoutes };
+
 ```
 
 ## src\routes\mercado-livre-routes.ts
 
 ```ts
 import { Router } from "express";
+
 import { MercadoLivreController } from "@/controllers/mercado-livre-controller";
+import { ensureAdmin } from "@/middleware/ensure-admin";
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+import { analyzeMercadoLivrePublicPage } from "@/services/mercado-livre/mercado-livre.service";
+import { findCatalogOfferByItem } from "@/services/mercado-livre-service";
 
 const mercadoLivreRoutes = Router();
+
 const controller = new MercadoLivreController();
 
 mercadoLivreRoutes.get("/authorize", controller.authorize.bind(controller));
+
 mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
+
 mercadoLivreRoutes.get("/products", controller.products.bind(controller));
 
+mercadoLivreRoutes.get(
+  "/products/check-offer",
+  ensureAuthenticated,
+  ensureAdmin,
+  async (request, response) => {
+    try {
+      const { catalogProductId, sellerId, itemId } = request.query;
+
+      if (
+        typeof catalogProductId !== "string" ||
+        typeof sellerId !== "string" ||
+        typeof itemId !== "string"
+      ) {
+        return response.status(400).json({
+          message:
+            "Informe catalogProductId, sellerId e itemId como parâmetros da consulta.",
+        });
+      }
+
+      const result = await findCatalogOfferByItem(
+        catalogProductId,
+        sellerId,
+        itemId,
+      );
+
+      return response.status(200).json({
+        catalogProductId,
+        sellerId,
+        itemId,
+        ...result,
+      });
+    } catch (error) {
+      console.error("Erro ao verificar oferta do Mercado Livre:", error);
+
+      return response.status(500).json({
+        message: "Erro ao verificar oferta do Mercado Livre.",
+      });
+    }
+  },
+);
+
+mercadoLivreRoutes.post(
+  "/products/analyze",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.analyzeProduct.bind(controller),
+);
+
+mercadoLivreRoutes.post(
+  "/products/import",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.importProduct.bind(controller),
+);
+
+/*
+ * Atualiza a oferta vinculada a um produto já existente.
+ *
+ * Importante:
+ * - não cria Product;
+ * - não cria MarketplaceProduct;
+ * - mantém os mesmos IDs;
+ * - atualiza apenas a referência/oferta do Mercado Livre.
+ */
+mercadoLivreRoutes.put(
+  "/products/:productId/offer",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.updateProductOffer.bind(controller),
+);
+
+mercadoLivreRoutes.post(
+  "/products/analyze-page",
+  ensureAuthenticated,
+  ensureAdmin,
+  async (request, response) => {
+    try {
+      const { url } = request.body;
+
+      if (typeof url !== "string" || !url.trim()) {
+        return response.status(400).json({
+          message: "Informe a URL do produto do Mercado Livre.",
+        });
+      }
+
+      const result = await analyzeMercadoLivrePublicPage(url);
+
+      return response.status(200).json(result);
+    } catch (error) {
+      console.error("Erro ao analisar página pública do Mercado Livre:", error);
+
+      return response.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro ao analisar página pública do Mercado Livre.",
+      });
+    }
+  },
+);
+
+mercadoLivreRoutes.post(
+  "/sync",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.sync.bind(controller),
+);
+
 export { mercadoLivreRoutes };
+
 ```
 
 ## src\routes\product-routes.ts
@@ -2211,7 +2546,9 @@ export { mercadoLivreRoutes };
 import { Router } from "express";
 
 import { ProductsController } from "@/controllers/products-controller";
+
 import { ensureAdmin } from "@/middleware/ensure-admin";
+
 import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
 
 const productRoutes = Router();
@@ -2269,6 +2606,7 @@ productRoutes.post(
 );
 
 export { productRoutes };
+
 ```
 
 ## src\routes\search-routes.ts
@@ -2285,6 +2623,7 @@ const searchController = new SearchController();
 searchRouter.get("/", searchController.search);
 
 export { searchRouter };
+
 ```
 
 ## src\routes\sessions-routes.ts
@@ -2299,6 +2638,7 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
+
 ```
 
 ## src\routes\subcategories-routes.ts
@@ -2341,6 +2681,7 @@ subcategoriesRouter.delete(
 );
 
 export { subcategoriesRouter as subcategoriesRoutes };
+
 ```
 
 ## src\routes\user-routes.ts
@@ -2372,6 +2713,7 @@ userRoutes.patch(
 userRoutes.put("/:id", ensureAuthenticated, ensureAdmin, userController.update);
 
 export { userRoutes };
+
 ```
 
 ## src\server.ts
@@ -2384,6 +2726,7 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
+
 ```
 
 ## src\services\blog-categories-service.ts
@@ -2638,6 +2981,7 @@ export const blogCategoriesService = {
     });
   },
 };
+
 ```
 
 ## src\services\blog-service.ts
@@ -3145,6 +3489,7 @@ export const blogService = {
     });
   },
 };
+
 ```
 
 ## src\services\categories-service.ts
@@ -3195,6 +3540,7 @@ export const categoryService = {
     });
   },
 };
+
 ```
 
 ## src\services\marketplace-service.ts
@@ -3245,289 +3591,1828 @@ export const marketplaceService = {
     });
   },
 };
+
 ```
 
-## src\services\mercado-livre-service.ts
+## src\services\mercado-livre\mercado-livre.api.ts
 
 ```ts
-import { randomBytes } from "node:crypto";
-import jwt from "jsonwebtoken";
-import { z } from "zod";
+import { API_URL, ensureMercadoLivreAccessToken } from "./mercado-livre.auth";
 
-import {
-  assertMercadoLivreConfig,
-  mercadoLivreConfig,
-} from "@/configs/mercado-livre";
+import type {
+  CatalogProduct,
+  MercadoLivreItem,
+  Offer,
+} from "./mercado-livre.types";
 
-import { prisma } from "@/database/prisma";
-import { createSlug } from "@/utils/createSlug";
+export async function mercadoLivreRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = await ensureMercadoLivreAccessToken();
 
-const tokenResponseSchema = z.object({
-  access_token: z.string(),
-  refresh_token: z.string(),
-  user_id: z.union([z.string(), z.number()]),
-  expires_in: z.number(),
-});
-
-const apiBaseUrl = "https://api.mercadolibre.com";
-
-// id do marketplace cadastrado no banco
-const MARKETPLACE_ID = "MERCADOLIVRE";
-
-function getStateToken() {
-  return jwt.sign(
-    { nonce: randomBytes(16).toString("hex") },
-    process.env.JWT_SECRET!,
-    { expiresIn: "10m" },
-  );
-}
-
-export function getMercadoLivreAuthorizationUrl() {
-  assertMercadoLivreConfig();
-
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: mercadoLivreConfig.clientId!,
-    redirect_uri: mercadoLivreConfig.redirectUri!,
-    state: getStateToken(),
-  });
-
-  return `https://auth.mercadolivre.com.br/authorization?${params}`;
-}
-
-export async function connectMercadoLivre(code: string, state: string) {
-  assertMercadoLivreConfig();
-  jwt.verify(state, process.env.JWT_SECRET!);
-
-  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: mercadoLivreConfig.clientId!,
-      client_secret: mercadoLivreConfig.clientSecret!,
-      code,
-      redirect_uri: mercadoLivreConfig.redirectUri!,
-    }),
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.headers ?? {}),
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   if (!response.ok) {
-    throw new Error(`Mercado Livre recusou a autorização (${response.status})`);
+    const errorText = await response.text();
+
+    throw new Error(`Mercado Livre API ${response.status}: ${errorText}`);
   }
 
-  const token = tokenResponseSchema.parse(await response.json());
-  return saveConnection(token);
+  return response.json() as Promise<T>;
 }
 
-async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
-  return prisma.mercadoLivreConnection.upsert({
-    where: { id: 1 },
+export async function getCatalogProduct(
+  catalogProductId: string,
+): Promise<CatalogProduct> {
+  return mercadoLivreRequest<CatalogProduct>(`/products/${catalogProductId}`);
+}
+
+export async function getCatalogOffers(catalogProductId: string): Promise<{
+  results: Offer[];
+}> {
+  return mercadoLivreRequest<{
+    results: Offer[];
+  }>(`/products/${catalogProductId}/items`);
+}
+
+export async function getMercadoLivreItem(
+  itemId: string,
+): Promise<MercadoLivreItem> {
+  return mercadoLivreRequest<MercadoLivreItem>(`/items/${itemId}`);
+}
+
+export async function getCatalogOffersBySeller(
+  catalogProductId: string,
+  sellerId: string,
+): Promise<Offer[]> {
+  const response = await getCatalogOffers(catalogProductId);
+
+  return response.results.filter(
+    (offer) => String(offer.seller_id) === sellerId,
+  );
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.auth.ts
+
+```ts
+import { createHash, randomBytes } from "node:crypto";
+
+import { mercadoLivreConfig } from "@/configs/mercado-livre";
+import { prisma } from "@/database/prisma";
+
+import type { TokenResponse } from "./mercado-livre.types";
+
+export const API_URL = "https://api.mercadolibre.com";
+
+export const MARKETPLACE_ID = "c255826b-2073-4c76-8966-b87f22403090";
+
+const PKCE_EXPIRES_IN_MS = 10 * 60 * 1000;
+
+type AuthorizationState = {
+  state: string;
+  codeVerifier: string;
+  expiresAt: number;
+};
+
+let authorizationState: AuthorizationState | null = null;
+
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
+let tokenExpiresAt = 0;
+
+function getMercadoLivreConfig() {
+  const clientId = mercadoLivreConfig.clientId;
+
+  const clientSecret = mercadoLivreConfig.clientSecret;
+
+  const redirectUri = mercadoLivreConfig.redirectUri;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error("As configurações do Mercado Livre não estão completas.");
+  }
+
+  return {
+    clientId,
+    clientSecret,
+    redirectUri,
+  };
+}
+
+function createCodeChallenge(codeVerifier: string): string {
+  return createHash("sha256").update(codeVerifier).digest("base64url");
+}
+
+async function loadMercadoLivreConnection() {
+  return prisma.mercadoLivreConnection.findUnique({
+    where: {
+      id: 1,
+    },
+  });
+}
+
+async function saveMercadoLivreConnection(token: TokenResponse) {
+  const expiresAt = new Date(Date.now() + token.expires_in * 1000);
+
+  await prisma.mercadoLivreConnection.upsert({
+    where: {
+      id: 1,
+    },
     create: {
       id: 1,
       sellerId: String(token.user_id),
       accessToken: token.access_token,
       refreshToken: token.refresh_token,
-      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      expiresAt,
     },
     update: {
       sellerId: String(token.user_id),
       accessToken: token.access_token,
       refreshToken: token.refresh_token,
-      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      expiresAt,
     },
   });
+
+  accessToken = token.access_token;
+  refreshToken = token.refresh_token;
+  tokenExpiresAt = expiresAt.getTime();
 }
 
-async function getAccessToken() {
-  const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+async function requestMercadoLivreToken(
+  code: string,
+  codeVerifier: string,
+): Promise<TokenResponse> {
+  const config = getMercadoLivreConfig();
+
+  const response = await fetch(`${API_URL}/oauth/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      code,
+      redirect_uri: config.redirectUri,
+      code_verifier: codeVerifier,
+    }),
   });
 
-  if (!connection) {
-    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Não foi possível obter o token do Mercado Livre (${response.status}). ${errorText}`,
+    );
   }
 
-  if (connection.expiresAt.getTime() > Date.now() + 60_000) {
-    return connection.accessToken;
+  return response.json() as Promise<TokenResponse>;
+}
+
+async function refreshMercadoLivreToken(): Promise<string> {
+  const config = getMercadoLivreConfig();
+
+  const connection = await loadMercadoLivreConnection();
+
+  if (!connection?.refreshToken) {
+    throw new Error("Não existe refresh token do Mercado Livre.");
   }
 
-  assertMercadoLivreConfig();
-
-  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+  const response = await fetch(`${API_URL}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       grant_type: "refresh_token",
-      client_id: mercadoLivreConfig.clientId!,
-      client_secret: mercadoLivreConfig.clientSecret!,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
       refresh_token: connection.refreshToken,
     }),
   });
 
   if (!response.ok) {
-    throw new Error("Não foi possível renovar a autorização do Mercado Livre");
+    const errorText = await response.text();
+
+    throw new Error(
+      `Não foi possível renovar o token do Mercado Livre (${response.status}). ${errorText}`,
+    );
   }
 
-  const token = tokenResponseSchema.parse(await response.json());
-  return (await saveConnection(token)).accessToken;
+  const token = (await response.json()) as TokenResponse;
+
+  await saveMercadoLivreConnection(token);
+
+  return token.access_token;
 }
 
-export async function getMercadoLivreProducts(search?: string) {
-  const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+export async function ensureMercadoLivreAccessToken(): Promise<string> {
+  const now = Date.now();
+
+  if (accessToken && tokenExpiresAt > now + 30_000) {
+    return accessToken;
+  }
+
+  const connection = await loadMercadoLivreConnection();
+
+  if (
+    connection?.accessToken &&
+    connection.expiresAt.getTime() > now + 30_000
+  ) {
+    accessToken = connection.accessToken;
+    refreshToken = connection.refreshToken;
+    tokenExpiresAt = connection.expiresAt.getTime();
+
+    return accessToken;
+  }
+
+  if (refreshToken || connection?.refreshToken) {
+    return refreshMercadoLivreToken();
+  }
+
+  throw new Error("O Mercado Livre não está conectado.");
+}
+
+export function getMercadoLivreAuthorizationUrl() {
+  const config = getMercadoLivreConfig();
+
+  const state = randomBytes(32).toString("base64url");
+
+  const codeVerifier = randomBytes(64).toString("base64url");
+
+  const codeChallenge = createCodeChallenge(codeVerifier);
+
+  authorizationState = {
+    state,
+    codeVerifier,
+    expiresAt: Date.now() + PKCE_EXPIRES_IN_MS,
+  };
+
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
 
-  if (!connection) {
-    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  return {
+    authorizationUrl: `https://auth.mercadolivre.com.br/authorization?${params.toString()}`,
+    state,
+  };
+}
+
+export async function connectMercadoLivre(code: string, state: string) {
+  if (!authorizationState) {
+    throw new Error("Não existe uma autorização do Mercado Livre pendente.");
   }
 
-  const accessToken = await getAccessToken();
+  if (authorizationState.expiresAt < Date.now()) {
+    authorizationState = null;
 
-  const params = new URLSearchParams({ status: "active", limit: "50" });
+    throw new Error("A autorização do Mercado Livre expirou.");
+  }
 
-  const idsResponse = await fetch(
-    `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+  if (authorizationState.state !== state) {
+    authorizationState = null;
+
+    throw new Error("Estado de autorização do Mercado Livre inválido.");
+  }
+
+  const currentState = authorizationState;
+
+  authorizationState = null;
+
+  const token = await requestMercadoLivreToken(code, currentState.codeVerifier);
+
+  await saveMercadoLivreConnection(token);
+
+  return {
+    connected: true,
+    sellerId: String(token.user_id),
+    expiresIn: token.expires_in,
+  };
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.helpers.ts
+
+```ts
+import type {
+  CatalogProduct,
+  Offer,
+  SerializedOffer,
+} from "./mercado-livre.types";
+
+export function ensureValidUrl(value: string, fieldName: string): string {
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    throw new Error(`${fieldName} é obrigatório.`);
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error(`${fieldName} deve ser uma URL válida.`);
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`${fieldName} deve utilizar HTTP ou HTTPS.`);
+  }
+
+  return normalized;
+}
+
+export function normalizeString(value: unknown, fieldName: string): string {
+  const normalized = String(value ?? "").trim();
+
+  if (!normalized) {
+    throw new Error(`${fieldName} é obrigatório.`);
+  }
+
+  return normalized;
+}
+
+export function normalizeNullableString(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+
+  return normalized || null;
+}
+
+export function normalizeDescription(value: unknown): string | null {
+  const normalized = normalizeNullableString(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/\s+/g, " ").trim();
+}
+
+export function normalizeNumber(value: unknown, fieldName: string): number {
+  const numberValue = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    throw new Error(`${fieldName} deve ser um número válido.`);
+  }
+
+  return numberValue;
+}
+
+export function normalizeInteger(value: unknown, fieldName: string): number {
+  const numberValue = normalizeNumber(value, fieldName);
+
+  if (!Number.isInteger(numberValue)) {
+    throw new Error(`${fieldName} deve ser um número inteiro.`);
+  }
+
+  return numberValue;
+}
+
+function getHashParams(url: URL): URLSearchParams {
+  const hash = url.hash.replace(/^#/, "").trim();
+
+  if (!hash) {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(hash);
+}
+
+function extractItemIdFromPdpFilters(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/item_id\s*:\s*(MLB\d{8,})/i);
+
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+export function extractCatalogIdFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const match = url.pathname.match(/\/p\/(MLB\d+)/i);
+
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+export function extractUserProductIdFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const match = url.pathname.match(/\/up\/(ML[A-Z]U\d+)/i);
+
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+export function extractWidFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const queryWid = url.searchParams.get("wid");
+
+  if (queryWid) {
+    const match = queryWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  const hashParams = getHashParams(url);
+  const hashWid = hashParams.get("wid");
+
+  if (hashWid) {
+    const match = hashWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  return null;
+}
+
+export function extractItemIdFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const catalogProductId = extractCatalogIdFromUrl(value);
+
+  const queryWid = url.searchParams.get("wid");
+
+  if (queryWid) {
+    const match = queryWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  const queryPdpFilters = url.searchParams.get("pdp_filters");
+  const queryPdpItem = extractItemIdFromPdpFilters(queryPdpFilters);
+
+  if (queryPdpItem) {
+    return queryPdpItem;
+  }
+
+  const hashParams = getHashParams(url);
+
+  const hashWid = hashParams.get("wid");
+
+  if (hashWid) {
+    const match = hashWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  const hashPdpFilters = hashParams.get("pdp_filters");
+  const hashPdpItem = extractItemIdFromPdpFilters(hashPdpFilters);
+
+  if (hashPdpItem) {
+    return hashPdpItem;
+  }
+
+  const pathnameMatch = url.pathname.match(/\/(MLB\d{8,})(?:\/|$)/i);
+
+  if (pathnameMatch) {
+    const pathnameId = pathnameMatch[1]?.toUpperCase();
+
+    if (pathnameId && pathnameId !== catalogProductId) {
+      return pathnameId;
+    }
+  }
+
+  return null;
+}
+
+export function serializeOffer(offer: Offer): SerializedOffer {
+  return {
+    itemId: offer.item_id,
+    sellerId: String(offer.seller_id),
+    title: offer.title ?? null,
+    price: offer.price ?? null,
+    originalPrice: offer.original_price ?? null,
+    currency: offer.currency_id ?? null,
+    categoryId: offer.category_id ?? null,
+    warranty: offer.warranty ?? null,
+    condition: offer.condition ?? null,
+    listingTypeId: offer.listing_type_id ?? null,
+    officialStoreId:
+      offer.official_store_id !== undefined && offer.official_store_id !== null
+        ? String(offer.official_store_id)
+        : null,
+    freeShipping: Boolean(offer.shipping?.free_shipping),
+    logisticType: offer.shipping?.logistic_type ?? null,
+    userProductId: offer.user_product_id ?? null,
+    available: offer.available !== false,
+    permalink: offer.permalink ?? null,
+    thumbnail: offer.thumbnail ?? null,
+    catalogProductId: offer.catalog_product_id ?? null,
+  };
+}
+
+export function createProductSlug(title: string): string {
+  const normalized = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || `produto-${Date.now()}`;
+}
+
+export function getCatalogImageUrls(catalog: CatalogProduct): string[] {
+  return (catalog.pictures ?? [])
+    .map((picture) => picture.secure_url ?? picture.url ?? "")
+    .filter(Boolean);
+}
+
+export function normalizeImages(
+  images: Array<{
+    imageUrl: string;
+    sortOrder?: number;
+  }> = [],
+): Array<{
+  imageUrl: string;
+  sortOrder: number;
+}> {
+  return images
+    .map((image, index) => ({
+      imageUrl: image.imageUrl.trim(),
+      sortOrder: image.sortOrder !== undefined ? image.sortOrder : index,
+    }))
+    .filter((image) => Boolean(image.imageUrl));
+}
+
+export function mergeProductImages(
+  catalogImages: string[],
+  manualImages: Array<{
+    imageUrl: string;
+    sortOrder?: number;
+  }> = [],
+): Array<{
+  imageUrl: string;
+  sortOrder: number;
+}> {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  for (const imageUrl of [
+    ...catalogImages,
+    ...manualImages.map((image) => image.imageUrl),
+  ]) {
+    const normalized = imageUrl.trim();
+
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    merged.push(normalized);
+  }
+
+  return merged.map((imageUrl, index) => ({
+    imageUrl,
+    sortOrder: index,
+  }));
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.service.ts
+
+```ts
+import { load } from "cheerio";
+import { chromium } from "playwright";
+import { prisma } from "@/database/prisma";
+import type { Prisma } from "@/generated/prisma/client";
+import {
+  getCatalogOffers,
+  getCatalogOffersBySeller,
+  getCatalogProduct,
+  getMercadoLivreItem,
+} from "./mercado-livre.api";
+import {
+  connectMercadoLivre,
+  getMercadoLivreAuthorizationUrl,
+  MARKETPLACE_ID,
+} from "./mercado-livre.auth";
+
+import {
+  createProductSlug,
+  ensureValidUrl,
+  extractCatalogIdFromUrl,
+  extractItemIdFromUrl,
+  extractUserProductIdFromUrl,
+  extractWidFromUrl,
+  getCatalogImageUrls,
+  mergeProductImages,
+  normalizeDescription,
+  normalizeImages,
+  normalizeInteger,
+  normalizeNullableString,
+  normalizeNumber,
+  normalizeString,
+  serializeOffer,
+} from "./mercado-livre.helpers";
+
+import type {
+  ImportInput,
+  ResolvedMercadoLivreLink,
+  UpdateMercadoLivreProductOfferInput,
+} from "./mercado-livre.types";
+
+export { connectMercadoLivre, getMercadoLivreAuthorizationUrl };
+
+async function resolveMercadoLivreExternalLink(
+  externalLink: string,
+): Promise<ResolvedMercadoLivreLink> {
+  ensureValidUrl(externalLink, "externalLink");
+
+  const directCatalogProductId = extractCatalogIdFromUrl(externalLink);
+
+  const userProductId = extractUserProductIdFromUrl(externalLink);
+
+  const requestedWid = extractWidFromUrl(externalLink);
+
+  let requestedItemId = extractItemIdFromUrl(externalLink);
+
+  let catalogProductId = directCatalogProductId;
+
+  if (!requestedItemId && requestedWid) {
+    requestedItemId = requestedWid;
+  }
+
+  if (!catalogProductId && requestedItemId) {
+    const item = await getMercadoLivreItem(requestedItemId);
+
+    catalogProductId = item.catalog_product_id?.trim().toUpperCase() ?? null;
+  }
+
+  if (!catalogProductId) {
+    if (userProductId) {
+      throw new Error(
+        `O link contém o User Product ${userProductId}, mas não foi possível identificar um catalogProductId através do item associado.`,
+      );
+    }
+
+    throw new Error(
+      "Não foi possível identificar o catalogProductId no link do Mercado Livre.",
+    );
+  }
+
+  return {
+    externalLink,
+    catalogProductId,
+    userProductId,
+    requestedItemId,
+    requestedWid,
+  };
+}
+
+export async function findCatalogOfferByItem(
+  catalogProductId: string,
+  sellerId: string,
+  itemId: string,
+) {
+  const offers = await getCatalogOffersBySeller(catalogProductId, sellerId);
+
+  return (
+    offers.find(
+      (offer) =>
+        offer.item_id === itemId && String(offer.seller_id) === sellerId,
+    ) ?? null
   );
+}
 
-  if (!idsResponse.ok) {
-    throw new Error("Não foi possível buscar os produtos no Mercado Livre");
-  }
+export async function analyzeMercadoLivrePublicPage(url: string) {
+  ensureValidUrl(url, "url");
 
-  const ids = z
-    .object({ results: z.array(z.string()) })
-    .parse(await idsResponse.json()).results;
+  const browser = await chromium.launch({
+    headless: true,
+  });
 
-  if (!ids.length) return [];
-
-  const detailsResponse = await fetch(
-    `${apiBaseUrl}/items?ids=${ids.join(",")}`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
-  );
-
-  if (!detailsResponse.ok) {
-    throw new Error("Não foi possível carregar os detalhes dos produtos");
-  }
-
-  const details = z
-    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
-    .parse(await detailsResponse.json());
-
-  const normalizedSearch = search?.trim().toLocaleLowerCase();
-
-  return details
-    .map(({ body }) => body)
-    .filter(
-      (item) =>
-        !normalizedSearch ||
-        String(item.title).toLocaleLowerCase().includes(normalizedSearch),
-    )
-    .map((item) => {
-      const externalId = String(item.id);
-      const title = String(item.title);
-      const currency = item.currency_id ? String(item.currency_id) : "BRL";
-      const price = Number(item.price ?? 0);
-      const imageUrl = String(item.thumbnail ?? "");
-      const affiliateUrl = String(item.permalink ?? "#");
-      const slug = createSlug(title, externalId);
-
-      return {
-        externalId,
-        title,
-        slug,
-        description: null,
-        shortDescription: null,
-        imageUrl,
-        price,
-        originalPrice: null,
-        currency,
-        rating: null,
-        reviewsCount: 0,
-        affiliateUrl,
-        available: true,
-        syncedAt: new Date(),
-
-        // relações obrigatórias
-        subcategoryId: "UUID-DA-SUBCATEGORY", // ajustar conforme sua lógica
-        marketplaceId: MARKETPLACE_ID,
-      };
+  try {
+    const page = await browser.newPage({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      viewport: {
+        width: 1366,
+        height: 768,
+      },
+      locale: "pt-BR",
     });
+
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+
+    await page.waitForTimeout(3000);
+
+    const finalUrl = page.url();
+
+    const html = await page.content();
+
+    const $ = load(html);
+
+    const title =
+      $("title").first().text().trim() ||
+      $('meta[property="og:title"]').attr("content")?.trim() ||
+      null;
+
+    const description =
+      $('meta[name="description"]').attr("content")?.trim() ||
+      $('meta[property="og:description"]').attr("content")?.trim() ||
+      null;
+
+    const canonical = $('link[rel="canonical"]').attr("href")?.trim() || null;
+
+    const ogImage =
+      $('meta[property="og:image"]').attr("content")?.trim() || null;
+
+    const ogUrl = $('meta[property="og:url"]').attr("content")?.trim() || null;
+
+    const ogType =
+      $('meta[property="og:type"]').attr("content")?.trim() || null;
+
+    const meta = {
+      title,
+      description,
+      canonical,
+      ogImage,
+      ogUrl,
+      ogType,
+    };
+
+    const jsonLd: unknown[] = [];
+
+    $('script[type="application/ld+json"]').each((_, element) => {
+      const content = $(element).text().trim();
+
+      if (!content) {
+        return;
+      }
+
+      try {
+        jsonLd.push(JSON.parse(content));
+      } catch {
+        jsonLd.push({
+          parseError: true,
+          raw: content,
+        });
+      }
+    });
+
+    const images = $("img")
+      .map((_, element) => ({
+        src:
+          $(element).attr("src")?.trim() ||
+          $(element).attr("data-src")?.trim() ||
+          $(element).attr("data-lazy-src")?.trim() ||
+          null,
+
+        srcset: $(element).attr("srcset")?.trim() || null,
+
+        alt: $(element).attr("alt")?.trim() || null,
+      }))
+      .get()
+      .filter((image) => image.src || image.srcset);
+
+    const links = $("a[href]")
+      .map((_, element) => ({
+        href: $(element).attr("href")?.trim() || null,
+        text: $(element).text().replace(/\s+/g, " ").trim() || null,
+      }))
+      .get()
+      .filter((link) => link.href);
+
+    const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+
+    const extractedItemIds = Array.from(
+      new Set(
+        `${url}\n${finalUrl}\n${html}\n${bodyText}`.match(/\bMLB\d{6,}\b/gi) ??
+          [],
+      ),
+    ).map((itemId) => itemId.toUpperCase());
+
+    const extractedCatalogIds = Array.from(
+      new Set(
+        `${url}\n${finalUrl}\n${html}\n${bodyText}`.match(/\bMLB\d{6,}\b/gi) ??
+          [],
+      ),
+    ).map((id) => id.toUpperCase());
+
+    return {
+      requestedUrl: url,
+
+      finalUrl,
+
+      httpStatus: 200,
+
+      page: {
+        title,
+        description,
+        canonical,
+      },
+
+      openGraph: {
+        title: $('meta[property="og:title"]').attr("content")?.trim() || null,
+
+        description:
+          $('meta[property="og:description"]').attr("content")?.trim() || null,
+
+        image: ogImage,
+
+        url: ogUrl,
+
+        type: ogType,
+      },
+
+      extractedIds: {
+        itemIds: extractedItemIds,
+        catalogProductIds: extractedCatalogIds,
+      },
+
+      jsonLd,
+
+      images,
+
+      links,
+
+      bodyText,
+
+      htmlLength: html.length,
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+export async function analyzeMercadoLivreExternalLink(externalLink: string) {
+  const resolved = await resolveMercadoLivreExternalLink(externalLink);
+
+  const catalog = await getCatalogProduct(resolved.catalogProductId);
+
+  /*
+   * Primeira consulta das ofertas do catálogo.
+   */
+  let offersResponse = await getCatalogOffers(resolved.catalogProductId);
+
+  let serializedOffers = offersResponse.results.map(serializeOffer);
+
+  let availableOffers = serializedOffers.filter(
+    (offer) => offer.available !== false,
+  );
+
+  /*
+   * Se nenhuma oferta foi encontrada, fazemos uma segunda
+   * consulta ao mesmo endpoint do Mercado Livre.
+   */
+  if (availableOffers.length === 0) {
+    offersResponse = await getCatalogOffers(resolved.catalogProductId);
+
+    serializedOffers = offersResponse.results.map(serializeOffer);
+
+    availableOffers = serializedOffers.filter(
+      (offer) => offer.available !== false,
+    );
+  }
+
+  /*
+   * Nunca selecionamos automaticamente uma oferta.
+   *
+   * Mesmo que exista apenas uma, ela precisa ser exibida
+   * para o usuário confirmar.
+   */
+  const selectedOffer = null;
+
+  return {
+    externalLink,
+
+    catalogProductId: resolved.catalogProductId,
+
+    userProductId: resolved.userProductId,
+
+    requestedItemId: resolved.requestedItemId,
+
+    requestedWid: resolved.requestedWid,
+
+    catalogStatus: catalog.status ?? null,
+
+    title: catalog.name ?? "",
+
+    permalink: catalog.permalink ?? null,
+
+    imageUrls: getCatalogImageUrls(catalog),
+
+    offers: availableOffers,
+
+    selectedOffer,
+
+    /*
+     * Uma única oferta também exige confirmação.
+     */
+    requiresOfferSelection: availableOffers.length > 0,
+
+    /*
+     * Só será true depois que as duas consultas
+     * não encontrarem nenhuma oferta válida.
+     */
+    noOffersFound: availableOffers.length === 0,
+  };
+}
+
+export async function importMercadoLivreProduct(input: ImportInput) {
+  const affiliateUrl = ensureValidUrl(input.affiliateUrl, "affiliateUrl");
+
+  const externalLink = ensureValidUrl(input.externalLink, "externalLink");
+
+  const catalogProductId = normalizeString(
+    input.catalogProductId,
+    "catalogProductId",
+  ).toUpperCase();
+
+  const itemId = normalizeString(input.itemId, "itemId").toUpperCase();
+
+  const sellerId = normalizeString(input.sellerId, "sellerId");
+
+  const subcategoryId = normalizeString(input.subcategoryId, "subcategoryId");
+
+  if (!/^MLB\d+$/.test(catalogProductId)) {
+    throw new Error("catalogProductId inválido.");
+  }
+
+  if (!/^MLB\d+$/.test(itemId)) {
+    throw new Error("itemId inválido.");
+  }
+
+  if (!/^\d+$/.test(sellerId)) {
+    throw new Error("sellerId inválido.");
+  }
+
+  const resolved = await resolveMercadoLivreExternalLink(externalLink);
+
+  if (resolved.catalogProductId !== catalogProductId) {
+    throw new Error(
+      "O catalogProductId informado não corresponde ao produto do link externo.",
+    );
+  }
+
+  const marketplace = await prisma.marketplace.findUnique({
+    where: {
+      id: MARKETPLACE_ID,
+    },
+  });
+
+  if (!marketplace) {
+    throw new Error("Marketplace do Mercado Livre não encontrado.");
+  }
+
+  const subcategory = await prisma.subcategory.findUnique({
+    where: {
+      id: subcategoryId,
+    },
+  });
+
+  if (!subcategory) {
+    throw new Error("Subcategoria não encontrada.");
+  }
+
+  const catalog = await getCatalogProduct(catalogProductId);
+
+  const offer = await findCatalogOfferByItem(
+    catalogProductId,
+    sellerId,
+    itemId,
+  );
+
+  if (!offer) {
+    throw new Error(
+      "A oferta selecionada não foi encontrada para o seller informado.",
+    );
+  }
+
+  /*
+   * A oferta existe, mas o Mercado Livre informou
+   * explicitamente que ela está indisponível.
+   *
+   * Não permitimos o cadastro como produto disponível.
+   */
+  if (offer.available === false) {
+    throw new Error(
+      "A oferta selecionada está indisponível no Mercado Livre e não pode ser cadastrada.",
+    );
+  }
+
+  const existingProduct = await prisma.product.findFirst({
+    where: {
+      externalId: itemId,
+      marketplaceId: MARKETPLACE_ID,
+    },
+  });
+
+  if (existingProduct) {
+    throw new Error("Este item do Mercado Livre já está cadastrado.");
+  }
+
+  const existingMarketplaceProduct = await prisma.marketplaceProduct.findFirst({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+      itemId,
+      sellerId,
+    },
+  });
+
+  if (existingMarketplaceProduct) {
+    throw new Error("Esta oferta do Mercado Livre já está cadastrada.");
+  }
+
+  const catalogImages = getCatalogImageUrls(catalog);
+
+  const manualImages = normalizeImages(input.images ?? []);
+
+  const allImages = mergeProductImages(catalogImages, manualImages);
+
+  const primaryImage =
+    input.imageUrl?.trim() || allImages[0]?.imageUrl || catalogImages[0] || "";
+
+  if (!primaryImage) {
+    throw new Error(
+      "Não foi possível determinar a imagem principal do produto.",
+    );
+  }
+
+  const title =
+    normalizeNullableString(catalog.name) ??
+    normalizeNullableString(input.title) ??
+    "Produto Mercado Livre";
+
+  const description = normalizeDescription(input.description);
+
+  const shortDescription = normalizeDescription(input.shortDescription);
+
+  const price = normalizeNumber(offer.price, "price");
+
+  const originalPrice =
+    offer.original_price !== undefined && offer.original_price !== null
+      ? normalizeNumber(offer.original_price, "originalPrice")
+      : input.originalPrice !== undefined && input.originalPrice !== null
+        ? normalizeNumber(input.originalPrice, "originalPrice")
+        : null;
+
+  const currency = normalizeString(
+    offer.currency_id || input.currency || "BRL",
+    "currency",
+  );
+
+  const rating =
+    input.rating !== undefined && input.rating !== null
+      ? normalizeNumber(input.rating, "rating")
+      : null;
+
+  const reviewsCount =
+    input.reviewsCount !== undefined
+      ? normalizeInteger(input.reviewsCount, "reviewsCount")
+      : 0;
+
+  const slug = createProductSlug(title);
+
+  const productData: Prisma.ProductCreateInput = {
+    externalId: itemId,
+
+    title,
+    slug,
+
+    description,
+    shortDescription,
+
+    imageUrl: primaryImage,
+
+    price,
+    originalPrice,
+    currency,
+
+    rating,
+    reviewsCount,
+
+    affiliateUrl,
+
+    /*
+     * Como a oferta foi validada acima e não está
+     * explicitamente indisponível, o cadastro começa
+     * como disponível.
+     */
+    available: true,
+
+    featured: input.featured ?? false,
+
+    destaque: input.destaque ?? false,
+
+    bestSeller: input.bestSeller ?? false,
+
+    active: input.active ?? true,
+
+    seoTitle: input.seoTitle?.trim() || null,
+
+    seoDescription: input.seoDescription?.trim() || null,
+
+    subcategory: {
+      connect: {
+        id: subcategoryId,
+      },
+    },
+
+    marketplace: {
+      connect: {
+        id: MARKETPLACE_ID,
+      },
+    },
+  };
+
+  const product = await prisma.$transaction(async (transaction) => {
+    const createdProduct = await transaction.product.create({
+      data: productData,
+    });
+
+    if (allImages.length > 0) {
+      await transaction.productImage.createMany({
+        data: allImages.map((image) => ({
+          productId: createdProduct.id,
+          imageUrl: image.imageUrl,
+          sortOrder: image.sortOrder,
+        })),
+      });
+    }
+
+    await transaction.marketplaceProduct.create({
+      data: {
+        productId: createdProduct.id,
+
+        marketplaceId: MARKETPLACE_ID,
+
+        externalId: itemId,
+
+        catalogProductId,
+
+        itemId,
+
+        sellerId,
+
+        externalLink,
+
+        affiliateUrl,
+
+        price,
+
+        originalPrice,
+
+        currency,
+
+        available: true,
+
+        syncStatus: "SUCCESS",
+
+        lastSyncedAt: new Date(),
+
+        lastSyncError: null,
+      },
+    });
+
+    return createdProduct;
+  });
+
+  return prisma.product.findUnique({
+    where: {
+      id: product.id,
+    },
+    include: {
+      subcategory: {
+        include: {
+          category: true,
+        },
+      },
+      images: true,
+      marketplaceProducts: true,
+    },
+  });
+}
+
+export async function recoverLegacyProduct(productId: string) {
+  const product = await prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      marketplaceProducts: true,
+    },
+  });
+
+  if (!product) {
+    throw new Error("Produto não encontrado.");
+  }
+
+  const marketplaceProduct = product.marketplaceProducts.find(
+    (item) => item.marketplaceId === MARKETPLACE_ID,
+  );
+
+  if (!marketplaceProduct) {
+    throw new Error("Relação com o Mercado Livre não encontrada.");
+  }
+
+  return product;
 }
 
 export async function syncMercadoLivreProducts() {
-  const products = await getMercadoLivreProducts();
-  const syncedAt = new Date();
+  const marketplaceProducts = await prisma.marketplaceProduct.findMany({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+    },
+    include: {
+      product: true,
+    },
+  });
 
-  await prisma.$transaction(
-    products.map((product) =>
-      prisma.product.upsert({
-        where: {
-          externalId_marketplaceId: {
-            externalId: product.externalId,
-            marketplaceId: product.marketplaceId,
+  const results: Array<{
+    id: string;
+    productId: string;
+    status: string;
+    error?: string;
+    itemId?: string | null;
+    sellerId?: string | null;
+    previousPrice?: number | null;
+    newPrice?: number | null;
+    previousOriginalPrice?: number | null;
+    newOriginalPrice?: number | null;
+  }> = [];
+
+  for (const marketplaceProduct of marketplaceProducts) {
+    try {
+      if (
+        !marketplaceProduct.catalogProductId ||
+        !marketplaceProduct.itemId ||
+        !marketplaceProduct.sellerId
+      ) {
+        throw new Error("Dados insuficientes para sincronização.");
+      }
+
+      const previousPrice =
+        marketplaceProduct.price !== null
+          ? Number(marketplaceProduct.price)
+          : null;
+
+      const previousOriginalPrice =
+        marketplaceProduct.originalPrice !== null
+          ? Number(marketplaceProduct.originalPrice)
+          : null;
+
+      await prisma.marketplaceProduct.update({
+        where: { id: marketplaceProduct.id },
+        data: {
+          syncStatus: "SYNCING",
+          lastSyncError: null,
+        },
+      });
+
+      const offer = await findCatalogOfferByItem(
+        marketplaceProduct.catalogProductId,
+        marketplaceProduct.sellerId,
+        marketplaceProduct.itemId,
+      );
+
+      if (!offer || offer.available === false) {
+        await prisma.$transaction([
+          prisma.product.update({
+            where: {
+              id: marketplaceProduct.productId,
+            },
+            data: {
+              available: false,
+              syncedAt: new Date(),
+            },
+          }),
+
+          prisma.marketplaceProduct.update({
+            where: {
+              id: marketplaceProduct.id,
+            },
+            data: {
+              available: false,
+              syncStatus: "UNAVAILABLE",
+              lastSyncedAt: new Date(),
+              lastSyncError: "Oferta não encontrada no Mercado Livre.",
+            },
+          }),
+        ]);
+
+        results.push({
+          id: marketplaceProduct.id,
+          productId: marketplaceProduct.productId,
+          status: "UNAVAILABLE",
+        });
+
+        continue;
+      }
+
+      const price = normalizeNumber(offer.price, "price");
+
+      const originalPrice = offer.original_price ?? null;
+
+      const currency = offer.currency_id ?? "BRL";
+
+      await prisma.$transaction([
+        prisma.product.update({
+          where: {
+            id: marketplaceProduct.productId,
           },
-        },
-        create: {
-          externalId: product.externalId,
-          title: product.title,
-          slug: product.slug,
-          description: product.description,
-          shortDescription: product.shortDescription,
-          imageUrl: product.imageUrl,
-          price: product.price,
-          originalPrice: product.originalPrice,
-          currency: product.currency,
-          rating: product.rating,
-          reviewsCount: product.reviewsCount,
-          affiliateUrl: product.affiliateUrl,
-          available: true,
-          syncedAt,
+          data: {
+            price,
+            originalPrice,
+            currency,
+            available: true,
+            syncedAt: new Date(),
+          },
+        }),
 
-          // apenas IDs escalares
-          subcategoryId: product.subcategoryId,
-          marketplaceId: product.marketplaceId,
-        },
-        update: {
-          title: product.title,
-          slug: product.slug,
-          description: product.description,
-          shortDescription: product.shortDescription,
-          imageUrl: product.imageUrl,
-          price: product.price,
-          originalPrice: product.originalPrice,
-          currency: product.currency,
-          rating: product.rating,
-          reviewsCount: product.reviewsCount,
-          affiliateUrl: product.affiliateUrl,
-          available: true,
-          syncedAt,
+        prisma.marketplaceProduct.update({
+          where: {
+            id: marketplaceProduct.id,
+          },
+          data: {
+            price,
+            originalPrice,
+            currency,
+            available: true,
+            syncStatus: "SUCCESS",
+            lastSyncedAt: new Date(),
+            lastSyncError: null,
+          },
+        }),
+      ]);
 
-          subcategoryId: product.subcategoryId,
-          marketplaceId: product.marketplaceId,
+      results.push({
+        id: marketplaceProduct.id,
+        productId: marketplaceProduct.productId,
+        status: "SUCCESS",
+        itemId: marketplaceProduct.itemId,
+        sellerId: marketplaceProduct.sellerId,
+        previousPrice,
+        newPrice: price,
+        previousOriginalPrice,
+        newOriginalPrice: originalPrice,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Erro desconhecido.";
+
+      await prisma.marketplaceProduct.update({
+        where: {
+          id: marketplaceProduct.id,
         },
-      }),
-    ),
+        data: {
+          syncStatus: "ERROR",
+          lastSyncedAt: new Date(),
+          lastSyncError: message,
+        },
+      });
+
+      results.push({
+        id: marketplaceProduct.id,
+        productId: marketplaceProduct.productId,
+        status: "ERROR",
+        error: message,
+      });
+    }
+  }
+
+  return {
+    message: "Produtos do Mercado Livre sincronizados com sucesso",
+    products: results,
+  };
+}
+
+export async function updateMercadoLivreProductOffer(
+  productId: string,
+  input: UpdateMercadoLivreProductOfferInput,
+) {
+  const externalLink = ensureValidUrl(input.externalLink, "externalLink");
+
+  const catalogProductId = normalizeString(
+    input.catalogProductId,
+    "catalogProductId",
+  ).toUpperCase();
+
+  const itemId = normalizeString(input.itemId, "itemId").toUpperCase();
+
+  const sellerId = normalizeString(input.sellerId, "sellerId");
+
+  const resolved = await resolveMercadoLivreExternalLink(externalLink);
+
+  if (resolved.catalogProductId !== catalogProductId) {
+    throw new Error(
+      "O catalogProductId informado não corresponde ao produto do link externo.",
+    );
+  }
+
+  const product = await prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      marketplaceProducts: true,
+    },
+  });
+
+  if (!product) {
+    throw new Error("Produto não encontrado.");
+  }
+
+  const marketplaceProduct = product.marketplaceProducts.find(
+    (item) => item.marketplaceId === MARKETPLACE_ID,
   );
 
-  const externalIds = products.map((p) => p.externalId);
+  const offer = await findCatalogOfferByItem(
+    catalogProductId,
+    sellerId,
+    itemId,
+  );
 
-  await prisma.product.updateMany({
-    where: externalIds.length
-      ? {
-          marketplaceId: MARKETPLACE_ID,
-          externalId: { notIn: externalIds },
-        }
-      : { marketplaceId: MARKETPLACE_ID },
-    data: { available: false, syncedAt },
+  if (!offer) {
+    throw new Error("A oferta selecionada não foi encontrada.");
+  }
+
+  /*
+   * A oferta ainda existe na resposta da API, mas está
+   * explicitamente marcada como indisponível.
+   *
+   * Nesse caso a atualização não deve transformar o
+   * produto em SUCCESS/disponível.
+   */
+  if (offer.available === false) {
+    throw new Error(
+      "A oferta selecionada está indisponível no Mercado Livre e não pode ser vinculada ao produto.",
+    );
+  }
+
+  const duplicateOffer = await prisma.marketplaceProduct.findFirst({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+      itemId,
+      sellerId,
+      ...(marketplaceProduct
+        ? {
+            id: {
+              not: marketplaceProduct.id,
+            },
+          }
+        : {}),
+    },
   });
 
-  return prisma.product.findMany({
-    where: { marketplaceId: MARKETPLACE_ID, available: true },
-    orderBy: { updatedAt: "desc" },
+  if (duplicateOffer) {
+    throw new Error("Esta oferta já está vinculada a outro produto.");
+  }
+
+  const price = normalizeNumber(offer.price, "price");
+
+  const originalPrice = offer.original_price ?? null;
+
+  const previousPrice = marketplaceProduct?.price ?? null;
+
+  const previousOriginalPrice = marketplaceProduct?.originalPrice ?? null;
+
+  const currency = offer.currency_id ?? "BRL";
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.product.update({
+      where: {
+        id: productId,
+      },
+      data: {
+        externalId: itemId,
+
+        price,
+
+        originalPrice,
+
+        currency,
+
+        available: true,
+
+        syncedAt: new Date(),
+      },
+    });
+
+    if (marketplaceProduct) {
+      await transaction.marketplaceProduct.update({
+        where: {
+          id: marketplaceProduct.id,
+        },
+        data: {
+          externalId: itemId,
+
+          catalogProductId,
+
+          itemId,
+
+          sellerId,
+
+          externalLink,
+
+          price,
+
+          originalPrice,
+
+          currency,
+
+          available: true,
+
+          syncStatus: "SUCCESS",
+
+          lastSyncedAt: new Date(),
+
+          lastSyncError: null,
+        },
+      });
+    } else {
+      await transaction.marketplaceProduct.create({
+        data: {
+          productId,
+
+          marketplaceId: MARKETPLACE_ID,
+
+          externalId: itemId,
+
+          catalogProductId,
+
+          itemId,
+
+          sellerId,
+
+          externalLink,
+
+          affiliateUrl: product.affiliateUrl,
+
+          price,
+
+          originalPrice,
+
+          currency,
+
+          available: true,
+
+          syncStatus: "SUCCESS",
+
+          lastSyncedAt: new Date(),
+
+          lastSyncError: null,
+        },
+      });
+    }
+  });
+
+  return prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      subcategory: {
+        include: {
+          category: true,
+        },
+      },
+      images: true,
+      marketplaceProducts: true,
+    },
   });
 }
+
+export async function getMercadoLivreProducts(search?: string) {
+  const normalizedSearch = search?.trim();
+
+  return prisma.product.findMany({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+
+      ...(normalizedSearch
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: normalizedSearch,
+                  mode: "insensitive",
+                },
+              },
+              {
+                externalId: {
+                  contains: normalizedSearch,
+                  mode: "insensitive",
+                },
+              },
+            ],
+          }
+        : {}),
+    },
+
+    include: {
+      subcategory: {
+        include: {
+          category: true,
+        },
+      },
+      images: true,
+      marketplaceProducts: true,
+    },
+
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.types.ts
+
+```ts
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope?: string;
+  user_id?: number;
+  refresh_token: string;
+};
+
+export type CatalogProduct = {
+  id: string;
+  status?: string;
+  name?: string;
+  domain_id?: string;
+  permalink?: string;
+  pictures?: Array<{
+    id?: string;
+    url?: string;
+    secure_url?: string;
+  }>;
+};
+
+export type MercadoLivreItem = {
+  id: string;
+  title?: string;
+  catalog_product_id?: string | null;
+  category_id?: string | null;
+  price?: number | null;
+  original_price?: number | null;
+  currency_id?: string | null;
+  available_quantity?: number | null;
+  condition?: string | null;
+  permalink?: string | null;
+  thumbnail?: string | null;
+  pictures?: Array<{
+    id?: string;
+    url?: string;
+    secure_url?: string;
+  }>;
+  seller?: {
+    id?: number | string;
+  };
+};
+
+export type Offer = {
+  item_id: string;
+  seller_id: string | number;
+  title?: string;
+  price?: number;
+  original_price?: number;
+  currency_id?: string;
+  available?: boolean;
+  permalink?: string;
+  thumbnail?: string;
+  catalog_product_id?: string | null;
+  category_id?: string | null;
+  warranty?: string | null;
+  condition?: string | null;
+  listing_type_id?: string | null;
+  official_store_id?: string | number | null;
+  shipping?: {
+    free_shipping?: boolean;
+    logistic_type?: string | null;
+  } | null;
+  user_product_id?: string | null;
+};
+
+export type ImportImageInput = {
+  imageUrl: string;
+  sortOrder?: number;
+};
+
+export type ImportInput = {
+  affiliateUrl: string;
+  externalLink: string;
+  catalogProductId: string;
+  itemId: string;
+  sellerId: string;
+  subcategoryId: string;
+  title: string;
+  description?: string;
+  shortDescription?: string;
+  imageUrl?: string;
+  images?: ImportImageInput[];
+  price?: number;
+  originalPrice?: number;
+  currency?: string;
+  rating?: number;
+  reviewsCount?: number;
+  featured?: boolean;
+  destaque?: boolean;
+  bestSeller?: boolean;
+  available?: boolean;
+  active?: boolean;
+  seoTitle?: string;
+  seoDescription?: string;
+};
+
+export type UpdateMercadoLivreProductOfferInput = {
+  externalLink: string;
+  catalogProductId: string;
+  itemId: string;
+  sellerId: string;
+};
+
+export type SerializedOffer = {
+  itemId: string;
+  sellerId: string;
+  title: string | null;
+  price: number | null;
+  originalPrice: number | null;
+  currency: string | null;
+  categoryId: string | null;
+  warranty: string | null;
+  condition: string | null;
+  listingTypeId: string | null;
+  officialStoreId: string | null;
+  freeShipping: boolean;
+  logisticType: string | null;
+  userProductId: string | null;
+  available: boolean;
+  permalink: string | null;
+  thumbnail: string | null;
+  catalogProductId: string | null;
+};
+
+export type ResolvedMercadoLivreLink = {
+  externalLink: string;
+  catalogProductId: string;
+  userProductId: string | null;
+  requestedItemId: string | null;
+  requestedWid: string | null;
+};
+
+```
+
+## src\services\mercado-livre-service.ts
+
+```ts
+export {
+  analyzeMercadoLivreExternalLink,
+  connectMercadoLivre,
+  findCatalogOfferByItem,
+  getMercadoLivreAuthorizationUrl,
+  getMercadoLivreProducts,
+  importMercadoLivreProduct,
+  recoverLegacyProduct,
+  syncMercadoLivreProducts,
+  updateMercadoLivreProductOffer,
+} from "./mercado-livre/mercado-livre.service";
+
+export type {
+  ImportImageInput,
+  ImportInput,
+  UpdateMercadoLivreProductOfferInput,
+} from "./mercado-livre/mercado-livre.types";
+
 ```
 
 ## src\services\products-service.ts
@@ -3555,6 +5440,8 @@ type CreateProductInput = {
   subcategoryId: string;
   marketplaceId: string;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   available?: boolean | undefined;
   active?: boolean | undefined;
   seoTitle?: string | undefined;
@@ -3576,6 +5463,8 @@ type UpdateProductInput = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   available?: boolean | undefined;
   active?: boolean | undefined;
   seoTitle?: string | undefined;
@@ -3586,6 +5475,8 @@ type ProductStatusInput = {
   active?: boolean | undefined;
   available?: boolean | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
 };
 
 type ProductQuery = {
@@ -3594,6 +5485,8 @@ type ProductQuery = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
 };
 
 type ProductAdminQuery = {
@@ -3601,6 +5494,8 @@ type ProductAdminQuery = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   active?: boolean | undefined;
   available?: boolean | undefined;
 };
@@ -3615,11 +5510,34 @@ type ProductWithRelations = {
       slug?: string;
     } | null;
   } | null;
+
   images?: Array<{
     id: string;
     imageUrl: string;
     sortOrder: number;
   }>;
+
+  marketplaceProducts?: Array<{
+    id: string;
+    productId: string;
+    marketplaceId: string;
+    externalId: string;
+    catalogProductId: string | null;
+    itemId: string | null;
+    sellerId: string | null;
+    externalLink: string | null;
+    affiliateUrl: string;
+    price: unknown;
+    originalPrice: unknown;
+    currency: string;
+    rating: unknown;
+    reviewsCount: number;
+    available: boolean;
+    syncStatus: string;
+    lastSyncedAt: Date | null;
+    lastSyncError: string | null;
+  }>;
+
   [key: string]: unknown;
 };
 
@@ -3702,6 +5620,18 @@ export const productsService = {
               featured: query.featured,
             }
           : {}),
+
+        ...(query.destaque !== undefined
+          ? {
+              destaque: query.destaque,
+            }
+          : {}),
+
+        ...(query.bestSeller !== undefined
+          ? {
+              bestSeller: query.bestSeller,
+            }
+          : {}),
       },
 
       include: {
@@ -3766,6 +5696,18 @@ export const productsService = {
             }
           : {}),
 
+        ...(query.destaque !== undefined
+          ? {
+              destaque: query.destaque,
+            }
+          : {}),
+
+        ...(query.bestSeller !== undefined
+          ? {
+              bestSeller: query.bestSeller,
+            }
+          : {}),
+
         ...(query.active !== undefined
           ? {
               active: query.active,
@@ -3821,6 +5763,8 @@ export const productsService = {
             sortOrder: "asc",
           },
         },
+
+        marketplaceProducts: true,
       },
     });
 
@@ -3914,6 +5858,8 @@ export const productsService = {
 
         available: data.available ?? true,
         featured: data.featured ?? false,
+        destaque: data.destaque ?? false,
+        bestSeller: data.bestSeller ?? false,
         active: data.active ?? true,
 
         ...(data.seoTitle !== undefined
@@ -4059,6 +6005,18 @@ export const productsService = {
               }
             : {}),
 
+          ...(data.destaque !== undefined
+            ? {
+                destaque: data.destaque,
+              }
+            : {}),
+
+          ...(data.bestSeller !== undefined
+            ? {
+                bestSeller: data.bestSeller,
+              }
+            : {}),
+
           ...(data.active !== undefined
             ? {
                 active: data.active,
@@ -4154,6 +6112,18 @@ export const productsService = {
               featured: data.featured,
             }
           : {}),
+
+        ...(data.destaque !== undefined
+          ? {
+              destaque: data.destaque,
+            }
+          : {}),
+
+        ...(data.bestSeller !== undefined
+          ? {
+              bestSeller: data.bestSeller,
+            }
+          : {}),
       },
 
       include: {
@@ -4184,6 +6154,7 @@ function createProductSlug(title: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
 ```
 
 ## src\services\search-service.ts
@@ -4333,6 +6304,7 @@ export const searchService = {
     };
   },
 };
+
 ```
 
 ## src\services\subcategories-services.ts
@@ -4385,12 +6357,14 @@ export const subcategoriesService = {
     });
   },
 };
+
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
+
 ```
 
 ## src\types\express\index.d.ts
@@ -4404,6 +6378,7 @@ declare namespace Express {
     };
   }
 }
+
 ```
 
 ## src\utils\AppError.ts
@@ -4420,6 +6395,7 @@ class AppError {
 }
 
 export { AppError };
+
 ```
 
 ## src\utils\createSlug.ts
@@ -4440,19 +6416,13 @@ export function createSlug(value: string, suffix?: string) {
 
   return `${slug}-${suffix}`;
 }
+
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import {
-  readdirSync,
-  statSync,
-  readFileSync,
-  appendFileSync,
-  existsSync,
-  unlinkSync,
-} from "fs";
+import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -4468,16 +6438,7 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".json",
-  ".md",
-  ".env",
-  ".css",
-];
+const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -4486,7 +6447,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js",
+  "postcss.config.js"
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -4499,8 +6460,7 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext))
-    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -4517,20 +6477,13 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if (
-        (extensions.includes(ext) || specialFiles.includes(file)) &&
-        !excludeFiles.includes(file)
-      ) {
+      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error(
-            "⚠️ Erro ao ler arquivo:",
-            fullPath,
-            (err as Error).message,
-          );
+          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
         }
       }
     }
@@ -4540,6 +6493,7 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
+
 ```
 
 ## tools\instrucoes.md
@@ -4707,9 +6661,11 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
+
 
 ## tools\WorldMix360-API.md
 
+
 ## .env
 
 ```env
@@ -4718,14 +6674,20 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=
 JWT_SECRET=r0s3nd0
 
 PRODUCT_SYNC_SECRET=3ee7524986e159cb3c02a833149821f25ede1614dc0944ded3451cd550c04550
+
+MELI_CLIENT_ID=6660819157435013
+
+MELI_CLIENT_SECRET=dEH7J1bZoqqMcEgBKhllAvlnUlyzKQZM
+
+MELI_REDIRECT_URI=https://infrastructure-shorts-stroke-entities.trycloudflare.com/mercado-livre/callback
 ```
 
 ## env.d.ts
 
 ```ts
 export declare const env: {
-  DATABASE_URL: string;
-  JWT_SECRET: string;
+    DATABASE_URL: string;
+    JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -4742,6 +6704,7 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
+
 ```
 
 ## env.ts
@@ -4763,6 +6726,7 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
+
 ```
 
 ## package.json
@@ -4790,10 +6754,12 @@ export const env = envSchema.parse(process.env);
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "bcrypt": "^6.0.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0",
+    "playwright": "^1.63.0",
     "tsconfig-paths": "^4.2.0",
     "zod": "^4.5.4"
   },
@@ -4810,6 +6776,7 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
+
 ```
 
 ## prisma7.config.ts
@@ -4827,6 +6794,7 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
+
 ```
 
 ## README.md
@@ -4893,6 +6861,7 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
+
 ## skills-lock.json
 
 ```json
@@ -4955,6 +6924,7 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
+
 ```
 
 ## src\app.ts
@@ -4999,6 +6969,7 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
+
 ```
 
 ## src\configs\auth.ts
@@ -5019,6 +6990,7 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
+
 ```
 
 ## src\configs\mercado-livre.ts
@@ -5045,6 +7017,7 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
+
 ```
 
 ## src\controllers\blog-categories-controller.ts
@@ -5271,6 +7244,7 @@ export class BlogCategoriesController {
     return response.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\blog-controller.ts
@@ -5552,6 +7526,7 @@ export class BlogController {
     });
   }
 }
+
 ```
 
 ## src\controllers\categories-controllers.ts
@@ -5704,6 +7679,7 @@ export class CategoryController {
     return res.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\marketplace-controller.ts
@@ -5895,6 +7871,7 @@ export class MarketplaceController {
     return res.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -5902,12 +7879,65 @@ export class MarketplaceController {
 ```ts
 import type { Request, Response } from "express";
 import { z } from "zod";
+
 import { mercadoLivreConfig } from "@/configs/mercado-livre";
+
 import {
+  analyzeMercadoLivreExternalLink,
   connectMercadoLivre,
   getMercadoLivreAuthorizationUrl,
   getMercadoLivreProducts,
+  importMercadoLivreProduct,
+  syncMercadoLivreProducts,
+  updateMercadoLivreProductOffer,
 } from "@/services/mercado-livre-service";
+
+const imageSchema = z.object({
+  imageUrl: z.string().url(),
+  sortOrder: z.number().int().min(0).optional(),
+});
+
+const importProductSchema = z.object({
+  affiliateUrl: z.string().url(),
+  externalLink: z.string().url(),
+
+  catalogProductId: z.string().regex(/^MLB\d+$/i),
+  itemId: z.string().regex(/^MLB\d+$/i),
+  sellerId: z.string().regex(/^\d+$/),
+
+  subcategoryId: z.string().uuid(),
+
+  title: z.string().min(1),
+  description: z.string().optional(),
+  shortDescription: z.string().optional(),
+
+  imageUrl: z.string().url().optional(),
+  images: z.array(imageSchema).optional(),
+
+  price: z.number().nonnegative().optional(),
+  originalPrice: z.number().nonnegative().optional(),
+  currency: z.string().min(1).max(10).optional(),
+
+  rating: z.number().min(0).max(5).optional(),
+  reviewsCount: z.number().int().min(0).optional(),
+
+  featured: z.boolean().optional(),
+  destaque: z.boolean().optional(),
+  bestSeller: z.boolean().optional(),
+  available: z.boolean().optional(),
+  active: z.boolean().optional(),
+
+  seoTitle: z.string().optional(),
+  seoDescription: z.string().optional(),
+});
+
+const updateProductOfferSchema = z.object({
+  externalLink: z.string().url(),
+
+  catalogProductId: z.string().regex(/^MLB\d+$/i),
+  itemId: z.string().regex(/^MLB\d+$/i),
+  sellerId: z.string().regex(/^\d+$/),
+});
 
 export class MercadoLivreController {
   authorize(_request: Request, response: Response) {
@@ -5918,9 +7948,14 @@ export class MercadoLivreController {
 
   async callback(request: Request, response: Response) {
     const query = z
-      .object({ code: z.string(), state: z.string() })
+      .object({
+        code: z.string(),
+        state: z.string(),
+      })
       .parse(request.query);
+
     await connectMercadoLivre(query.code, query.state);
+
     return response.redirect(
       `${mercadoLivreConfig.webUrl}/?mercadoLivre=connected`,
     );
@@ -5928,13 +7963,127 @@ export class MercadoLivreController {
 
   async products(request: Request, response: Response) {
     const query = z
-      .object({ search: z.string().optional() })
+      .object({
+        search: z.string().optional(),
+      })
       .parse(request.query);
+
     return response.json({
       products: await getMercadoLivreProducts(query.search),
     });
   }
+
+  async analyzeProduct(request: Request, response: Response) {
+    const body = z
+      .object({
+        externalLink: z.string().url(),
+      })
+      .parse(request.body);
+
+    const result = await analyzeMercadoLivreExternalLink(body.externalLink);
+
+    return response.json(result);
+  }
+
+  async importProduct(request: Request, response: Response) {
+    const body = importProductSchema.parse(request.body);
+
+    const input = {
+      affiliateUrl: body.affiliateUrl,
+      externalLink: body.externalLink,
+      catalogProductId: body.catalogProductId,
+      itemId: body.itemId,
+      sellerId: body.sellerId,
+      subcategoryId: body.subcategoryId,
+      title: body.title,
+
+      ...(body.description !== undefined
+        ? { description: body.description }
+        : {}),
+
+      ...(body.shortDescription !== undefined
+        ? { shortDescription: body.shortDescription }
+        : {}),
+
+      ...(body.imageUrl !== undefined ? { imageUrl: body.imageUrl } : {}),
+
+      ...(body.images !== undefined
+        ? {
+            images: body.images.map((image) =>
+              image.sortOrder !== undefined
+                ? {
+                    imageUrl: image.imageUrl,
+                    sortOrder: image.sortOrder,
+                  }
+                : {
+                    imageUrl: image.imageUrl,
+                  },
+            ),
+          }
+        : {}),
+
+      ...(body.price !== undefined ? { price: body.price } : {}),
+
+      ...(body.originalPrice !== undefined
+        ? { originalPrice: body.originalPrice }
+        : {}),
+
+      ...(body.currency !== undefined ? { currency: body.currency } : {}),
+
+      ...(body.rating !== undefined ? { rating: body.rating } : {}),
+
+      ...(body.reviewsCount !== undefined
+        ? { reviewsCount: body.reviewsCount }
+        : {}),
+
+      ...(body.featured !== undefined ? { featured: body.featured } : {}),
+
+      ...(body.destaque !== undefined ? { destaque: body.destaque } : {}),
+
+      ...(body.bestSeller !== undefined ? { bestSeller: body.bestSeller } : {}),
+
+      ...(body.available !== undefined ? { available: body.available } : {}),
+
+      ...(body.active !== undefined ? { active: body.active } : {}),
+
+      ...(body.seoTitle !== undefined ? { seoTitle: body.seoTitle } : {}),
+
+      ...(body.seoDescription !== undefined
+        ? { seoDescription: body.seoDescription }
+        : {}),
+    };
+
+    const product = await importMercadoLivreProduct(input);
+
+    return response.status(201).json({
+      message: "Produto do Mercado Livre importado com sucesso",
+      product,
+    });
+  }
+
+  async updateProductOffer(request: Request, response: Response) {
+    const productId = z.string().uuid().parse(request.params.productId);
+
+    const body = updateProductOfferSchema.parse(request.body);
+
+    const product = await updateMercadoLivreProductOffer(productId, body);
+
+    return response.status(200).json({
+      message: "Oferta do Mercado Livre atualizada com sucesso",
+      product,
+    });
+  }
+
+  async sync(_request: Request, response: Response) {
+    const result = await syncMercadoLivreProducts();
+
+    return response.json({
+      message: "Produtos do Mercado Livre sincronizados com sucesso",
+      products: result.products,
+    });
+  }
 }
+
 ```
 
 ## src\controllers\products-controller.ts
@@ -5968,6 +8117,8 @@ const createProductSchema = z.object({
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
   featured: z.coerce.boolean().default(false),
+  destaque: z.coerce.boolean().default(false),
+  bestSeller: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
   active: z.coerce.boolean().default(true),
   seoTitle: z.string().trim().optional(),
@@ -5989,6 +8140,8 @@ const updateProductSchema = z.object({
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
   featured: z.coerce.boolean().optional(),
+  destaque: z.coerce.boolean().optional(),
+  bestSeller: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
   active: z.coerce.boolean().optional(),
   seoTitle: z.string().trim().optional(),
@@ -6000,12 +8153,16 @@ const updateProductStatusSchema = z
     active: z.coerce.boolean().optional(),
     available: z.coerce.boolean().optional(),
     featured: z.coerce.boolean().optional(),
+    destaque: z.coerce.boolean().optional(),
+    bestSeller: z.coerce.boolean().optional(),
   })
   .refine(
     (data) =>
       data.active !== undefined ||
       data.available !== undefined ||
-      data.featured !== undefined,
+      data.featured !== undefined ||
+      data.destaque !== undefined ||
+      data.bestSeller !== undefined,
     {
       message: "Informe pelo menos um status para atualizar.",
     },
@@ -6032,6 +8189,8 @@ export class ProductsController {
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
+        destaque: z.coerce.boolean().optional(),
+        bestSeller: z.coerce.boolean().optional(),
       })
       .parse(request.query);
 
@@ -6049,6 +8208,8 @@ export class ProductsController {
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
+        destaque: z.coerce.boolean().optional(),
+        bestSeller: z.coerce.boolean().optional(),
         active: z.coerce.boolean().optional(),
         available: z.coerce.boolean().optional(),
       })
@@ -6135,11 +8296,11 @@ export class ProductsController {
       });
     }
 
-    const products = await syncMercadoLivreProducts();
+    const result = await syncMercadoLivreProducts();
 
     return response.json({
-      products,
-      synced: products.length,
+      products: result.products,
+      synced: result.products.length,
     });
   }
 
@@ -6169,6 +8330,7 @@ export class ProductsController {
     return response.json({ product });
   }
 }
+
 ```
 
 ## src\controllers\search-controller.ts
@@ -6199,6 +8361,7 @@ export class SearchController {
     });
   }
 }
+
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -6246,6 +8409,7 @@ class SessionsController {
 }
 
 export { SessionsController };
+
 ```
 
 ## src\controllers\subcategories-controller.ts
@@ -6434,6 +8598,7 @@ export class SubcategoriesController {
     return res.status(204).send();
   }
 }
+
 ```
 
 ## src\controllers\users-controllers.ts
@@ -6550,6 +8715,7 @@ class UserController {
 }
 
 export { UserController };
+
 ```
 
 ## src\database\prisma.ts
@@ -6570,6 +8736,7 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
+
 ```
 
 ## src\middleware\ensure-admin.ts
@@ -6590,6 +8757,7 @@ export function ensureAdmin(
 
   return next();
 }
+
 ```
 
 ## src\middleware\ensure-authenticated.ts
@@ -6636,6 +8804,7 @@ export function ensureAuthenticated(
     throw new AppError("Token inválido ou expirado", 401);
   }
 }
+
 ```
 
 ## src\middleware\error-handling.ts
@@ -6662,6 +8831,7 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
+
 ```
 
 ## src\routes\blog-categories-routes.ts
@@ -6715,6 +8885,7 @@ blogCategoriesRoutes.delete(
 );
 
 export { blogCategoriesRoutes };
+
 ```
 
 ## src\routes\blog-routes.ts
@@ -6770,6 +8941,7 @@ blogRoutes.delete(
 blogRoutes.get("/:slug", blogController.show);
 
 export { blogRoutes };
+
 ```
 
 ## src\routes\categories-routes.ts
@@ -6813,6 +8985,7 @@ categoriesRouter.delete(
 );
 
 export { categoriesRouter as categoriesRoutes };
+
 ```
 
 ## src\routes\index.ts
@@ -6855,6 +9028,7 @@ routes.use("/blog/categories", blogCategoriesRoutes);
 routes.use("/blog", blogRoutes);
 
 export { routes };
+
 ```
 
 ## src\routes\marketplace-routes.ts
@@ -6897,22 +9071,140 @@ marketplaceRouter.delete(
 );
 
 export { marketplaceRouter as marketplaceRoutes };
+
 ```
 
 ## src\routes\mercado-livre-routes.ts
 
 ```ts
 import { Router } from "express";
+
 import { MercadoLivreController } from "@/controllers/mercado-livre-controller";
+import { ensureAdmin } from "@/middleware/ensure-admin";
+import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
+import { analyzeMercadoLivrePublicPage } from "@/services/mercado-livre/mercado-livre.service";
+import { findCatalogOfferByItem } from "@/services/mercado-livre-service";
 
 const mercadoLivreRoutes = Router();
+
 const controller = new MercadoLivreController();
 
 mercadoLivreRoutes.get("/authorize", controller.authorize.bind(controller));
+
 mercadoLivreRoutes.get("/callback", controller.callback.bind(controller));
+
 mercadoLivreRoutes.get("/products", controller.products.bind(controller));
 
+mercadoLivreRoutes.get(
+  "/products/check-offer",
+  ensureAuthenticated,
+  ensureAdmin,
+  async (request, response) => {
+    try {
+      const { catalogProductId, sellerId, itemId } = request.query;
+
+      if (
+        typeof catalogProductId !== "string" ||
+        typeof sellerId !== "string" ||
+        typeof itemId !== "string"
+      ) {
+        return response.status(400).json({
+          message:
+            "Informe catalogProductId, sellerId e itemId como parâmetros da consulta.",
+        });
+      }
+
+      const result = await findCatalogOfferByItem(
+        catalogProductId,
+        sellerId,
+        itemId,
+      );
+
+      return response.status(200).json({
+        catalogProductId,
+        sellerId,
+        itemId,
+        ...result,
+      });
+    } catch (error) {
+      console.error("Erro ao verificar oferta do Mercado Livre:", error);
+
+      return response.status(500).json({
+        message: "Erro ao verificar oferta do Mercado Livre.",
+      });
+    }
+  },
+);
+
+mercadoLivreRoutes.post(
+  "/products/analyze",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.analyzeProduct.bind(controller),
+);
+
+mercadoLivreRoutes.post(
+  "/products/import",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.importProduct.bind(controller),
+);
+
+/*
+ * Atualiza a oferta vinculada a um produto já existente.
+ *
+ * Importante:
+ * - não cria Product;
+ * - não cria MarketplaceProduct;
+ * - mantém os mesmos IDs;
+ * - atualiza apenas a referência/oferta do Mercado Livre.
+ */
+mercadoLivreRoutes.put(
+  "/products/:productId/offer",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.updateProductOffer.bind(controller),
+);
+
+mercadoLivreRoutes.post(
+  "/products/analyze-page",
+  ensureAuthenticated,
+  ensureAdmin,
+  async (request, response) => {
+    try {
+      const { url } = request.body;
+
+      if (typeof url !== "string" || !url.trim()) {
+        return response.status(400).json({
+          message: "Informe a URL do produto do Mercado Livre.",
+        });
+      }
+
+      const result = await analyzeMercadoLivrePublicPage(url);
+
+      return response.status(200).json(result);
+    } catch (error) {
+      console.error("Erro ao analisar página pública do Mercado Livre:", error);
+
+      return response.status(500).json({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Erro ao analisar página pública do Mercado Livre.",
+      });
+    }
+  },
+);
+
+mercadoLivreRoutes.post(
+  "/sync",
+  ensureAuthenticated,
+  ensureAdmin,
+  controller.sync.bind(controller),
+);
+
 export { mercadoLivreRoutes };
+
 ```
 
 ## src\routes\product-routes.ts
@@ -6921,7 +9213,9 @@ export { mercadoLivreRoutes };
 import { Router } from "express";
 
 import { ProductsController } from "@/controllers/products-controller";
+
 import { ensureAdmin } from "@/middleware/ensure-admin";
+
 import { ensureAuthenticated } from "@/middleware/ensure-authenticated";
 
 const productRoutes = Router();
@@ -6979,6 +9273,7 @@ productRoutes.post(
 );
 
 export { productRoutes };
+
 ```
 
 ## src\routes\search-routes.ts
@@ -6995,6 +9290,7 @@ const searchController = new SearchController();
 searchRouter.get("/", searchController.search);
 
 export { searchRouter };
+
 ```
 
 ## src\routes\sessions-routes.ts
@@ -7009,6 +9305,7 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
+
 ```
 
 ## src\routes\subcategories-routes.ts
@@ -7051,6 +9348,7 @@ subcategoriesRouter.delete(
 );
 
 export { subcategoriesRouter as subcategoriesRoutes };
+
 ```
 
 ## src\routes\user-routes.ts
@@ -7082,6 +9380,7 @@ userRoutes.patch(
 userRoutes.put("/:id", ensureAuthenticated, ensureAdmin, userController.update);
 
 export { userRoutes };
+
 ```
 
 ## src\server.ts
@@ -7094,6 +9393,7 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
+
 ```
 
 ## src\services\blog-categories-service.ts
@@ -7348,6 +9648,7 @@ export const blogCategoriesService = {
     });
   },
 };
+
 ```
 
 ## src\services\blog-service.ts
@@ -7855,6 +10156,7 @@ export const blogService = {
     });
   },
 };
+
 ```
 
 ## src\services\categories-service.ts
@@ -7905,6 +10207,7 @@ export const categoryService = {
     });
   },
 };
+
 ```
 
 ## src\services\marketplace-service.ts
@@ -7955,289 +10258,1828 @@ export const marketplaceService = {
     });
   },
 };
+
 ```
 
-## src\services\mercado-livre-service.ts
+## src\services\mercado-livre\mercado-livre.api.ts
 
 ```ts
-import { randomBytes } from "node:crypto";
-import jwt from "jsonwebtoken";
-import { z } from "zod";
+import { API_URL, ensureMercadoLivreAccessToken } from "./mercado-livre.auth";
 
-import {
-  assertMercadoLivreConfig,
-  mercadoLivreConfig,
-} from "@/configs/mercado-livre";
+import type {
+  CatalogProduct,
+  MercadoLivreItem,
+  Offer,
+} from "./mercado-livre.types";
 
-import { prisma } from "@/database/prisma";
-import { createSlug } from "@/utils/createSlug";
+export async function mercadoLivreRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = await ensureMercadoLivreAccessToken();
 
-const tokenResponseSchema = z.object({
-  access_token: z.string(),
-  refresh_token: z.string(),
-  user_id: z.union([z.string(), z.number()]),
-  expires_in: z.number(),
-});
-
-const apiBaseUrl = "https://api.mercadolibre.com";
-
-// id do marketplace cadastrado no banco
-const MARKETPLACE_ID = "MERCADOLIVRE";
-
-function getStateToken() {
-  return jwt.sign(
-    { nonce: randomBytes(16).toString("hex") },
-    process.env.JWT_SECRET!,
-    { expiresIn: "10m" },
-  );
-}
-
-export function getMercadoLivreAuthorizationUrl() {
-  assertMercadoLivreConfig();
-
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: mercadoLivreConfig.clientId!,
-    redirect_uri: mercadoLivreConfig.redirectUri!,
-    state: getStateToken(),
-  });
-
-  return `https://auth.mercadolivre.com.br/authorization?${params}`;
-}
-
-export async function connectMercadoLivre(code: string, state: string) {
-  assertMercadoLivreConfig();
-  jwt.verify(state, process.env.JWT_SECRET!);
-
-  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: mercadoLivreConfig.clientId!,
-      client_secret: mercadoLivreConfig.clientSecret!,
-      code,
-      redirect_uri: mercadoLivreConfig.redirectUri!,
-    }),
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.headers ?? {}),
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   if (!response.ok) {
-    throw new Error(`Mercado Livre recusou a autorização (${response.status})`);
+    const errorText = await response.text();
+
+    throw new Error(`Mercado Livre API ${response.status}: ${errorText}`);
   }
 
-  const token = tokenResponseSchema.parse(await response.json());
-  return saveConnection(token);
+  return response.json() as Promise<T>;
 }
 
-async function saveConnection(token: z.infer<typeof tokenResponseSchema>) {
-  return prisma.mercadoLivreConnection.upsert({
-    where: { id: 1 },
+export async function getCatalogProduct(
+  catalogProductId: string,
+): Promise<CatalogProduct> {
+  return mercadoLivreRequest<CatalogProduct>(`/products/${catalogProductId}`);
+}
+
+export async function getCatalogOffers(catalogProductId: string): Promise<{
+  results: Offer[];
+}> {
+  return mercadoLivreRequest<{
+    results: Offer[];
+  }>(`/products/${catalogProductId}/items`);
+}
+
+export async function getMercadoLivreItem(
+  itemId: string,
+): Promise<MercadoLivreItem> {
+  return mercadoLivreRequest<MercadoLivreItem>(`/items/${itemId}`);
+}
+
+export async function getCatalogOffersBySeller(
+  catalogProductId: string,
+  sellerId: string,
+): Promise<Offer[]> {
+  const response = await getCatalogOffers(catalogProductId);
+
+  return response.results.filter(
+    (offer) => String(offer.seller_id) === sellerId,
+  );
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.auth.ts
+
+```ts
+import { createHash, randomBytes } from "node:crypto";
+
+import { mercadoLivreConfig } from "@/configs/mercado-livre";
+import { prisma } from "@/database/prisma";
+
+import type { TokenResponse } from "./mercado-livre.types";
+
+export const API_URL = "https://api.mercadolibre.com";
+
+export const MARKETPLACE_ID = "c255826b-2073-4c76-8966-b87f22403090";
+
+const PKCE_EXPIRES_IN_MS = 10 * 60 * 1000;
+
+type AuthorizationState = {
+  state: string;
+  codeVerifier: string;
+  expiresAt: number;
+};
+
+let authorizationState: AuthorizationState | null = null;
+
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
+let tokenExpiresAt = 0;
+
+function getMercadoLivreConfig() {
+  const clientId = mercadoLivreConfig.clientId;
+
+  const clientSecret = mercadoLivreConfig.clientSecret;
+
+  const redirectUri = mercadoLivreConfig.redirectUri;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error("As configurações do Mercado Livre não estão completas.");
+  }
+
+  return {
+    clientId,
+    clientSecret,
+    redirectUri,
+  };
+}
+
+function createCodeChallenge(codeVerifier: string): string {
+  return createHash("sha256").update(codeVerifier).digest("base64url");
+}
+
+async function loadMercadoLivreConnection() {
+  return prisma.mercadoLivreConnection.findUnique({
+    where: {
+      id: 1,
+    },
+  });
+}
+
+async function saveMercadoLivreConnection(token: TokenResponse) {
+  const expiresAt = new Date(Date.now() + token.expires_in * 1000);
+
+  await prisma.mercadoLivreConnection.upsert({
+    where: {
+      id: 1,
+    },
     create: {
       id: 1,
       sellerId: String(token.user_id),
       accessToken: token.access_token,
       refreshToken: token.refresh_token,
-      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      expiresAt,
     },
     update: {
       sellerId: String(token.user_id),
       accessToken: token.access_token,
       refreshToken: token.refresh_token,
-      expiresAt: new Date(Date.now() + token.expires_in * 1000),
+      expiresAt,
     },
   });
+
+  accessToken = token.access_token;
+  refreshToken = token.refresh_token;
+  tokenExpiresAt = expiresAt.getTime();
 }
 
-async function getAccessToken() {
-  const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+async function requestMercadoLivreToken(
+  code: string,
+  codeVerifier: string,
+): Promise<TokenResponse> {
+  const config = getMercadoLivreConfig();
+
+  const response = await fetch(`${API_URL}/oauth/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      code,
+      redirect_uri: config.redirectUri,
+      code_verifier: codeVerifier,
+    }),
   });
 
-  if (!connection) {
-    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Não foi possível obter o token do Mercado Livre (${response.status}). ${errorText}`,
+    );
   }
 
-  if (connection.expiresAt.getTime() > Date.now() + 60_000) {
-    return connection.accessToken;
+  return response.json() as Promise<TokenResponse>;
+}
+
+async function refreshMercadoLivreToken(): Promise<string> {
+  const config = getMercadoLivreConfig();
+
+  const connection = await loadMercadoLivreConnection();
+
+  if (!connection?.refreshToken) {
+    throw new Error("Não existe refresh token do Mercado Livre.");
   }
 
-  assertMercadoLivreConfig();
-
-  const response = await fetch(`${apiBaseUrl}/oauth/token`, {
+  const response = await fetch(`${API_URL}/oauth/token`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
     body: new URLSearchParams({
       grant_type: "refresh_token",
-      client_id: mercadoLivreConfig.clientId!,
-      client_secret: mercadoLivreConfig.clientSecret!,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
       refresh_token: connection.refreshToken,
     }),
   });
 
   if (!response.ok) {
-    throw new Error("Não foi possível renovar a autorização do Mercado Livre");
+    const errorText = await response.text();
+
+    throw new Error(
+      `Não foi possível renovar o token do Mercado Livre (${response.status}). ${errorText}`,
+    );
   }
 
-  const token = tokenResponseSchema.parse(await response.json());
-  return (await saveConnection(token)).accessToken;
+  const token = (await response.json()) as TokenResponse;
+
+  await saveMercadoLivreConnection(token);
+
+  return token.access_token;
 }
 
-export async function getMercadoLivreProducts(search?: string) {
-  const connection = await prisma.mercadoLivreConnection.findUnique({
-    where: { id: 1 },
+export async function ensureMercadoLivreAccessToken(): Promise<string> {
+  const now = Date.now();
+
+  if (accessToken && tokenExpiresAt > now + 30_000) {
+    return accessToken;
+  }
+
+  const connection = await loadMercadoLivreConnection();
+
+  if (
+    connection?.accessToken &&
+    connection.expiresAt.getTime() > now + 30_000
+  ) {
+    accessToken = connection.accessToken;
+    refreshToken = connection.refreshToken;
+    tokenExpiresAt = connection.expiresAt.getTime();
+
+    return accessToken;
+  }
+
+  if (refreshToken || connection?.refreshToken) {
+    return refreshMercadoLivreToken();
+  }
+
+  throw new Error("O Mercado Livre não está conectado.");
+}
+
+export function getMercadoLivreAuthorizationUrl() {
+  const config = getMercadoLivreConfig();
+
+  const state = randomBytes(32).toString("base64url");
+
+  const codeVerifier = randomBytes(64).toString("base64url");
+
+  const codeChallenge = createCodeChallenge(codeVerifier);
+
+  authorizationState = {
+    state,
+    codeVerifier,
+    expiresAt: Date.now() + PKCE_EXPIRES_IN_MS,
+  };
+
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
   });
 
-  if (!connection) {
-    throw new Error("A conta do Mercado Livre ainda não foi conectada");
+  return {
+    authorizationUrl: `https://auth.mercadolivre.com.br/authorization?${params.toString()}`,
+    state,
+  };
+}
+
+export async function connectMercadoLivre(code: string, state: string) {
+  if (!authorizationState) {
+    throw new Error("Não existe uma autorização do Mercado Livre pendente.");
   }
 
-  const accessToken = await getAccessToken();
+  if (authorizationState.expiresAt < Date.now()) {
+    authorizationState = null;
 
-  const params = new URLSearchParams({ status: "active", limit: "50" });
+    throw new Error("A autorização do Mercado Livre expirou.");
+  }
 
-  const idsResponse = await fetch(
-    `${apiBaseUrl}/users/${connection.sellerId}/items/search?${params}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+  if (authorizationState.state !== state) {
+    authorizationState = null;
+
+    throw new Error("Estado de autorização do Mercado Livre inválido.");
+  }
+
+  const currentState = authorizationState;
+
+  authorizationState = null;
+
+  const token = await requestMercadoLivreToken(code, currentState.codeVerifier);
+
+  await saveMercadoLivreConnection(token);
+
+  return {
+    connected: true,
+    sellerId: String(token.user_id),
+    expiresIn: token.expires_in,
+  };
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.helpers.ts
+
+```ts
+import type {
+  CatalogProduct,
+  Offer,
+  SerializedOffer,
+} from "./mercado-livre.types";
+
+export function ensureValidUrl(value: string, fieldName: string): string {
+  const normalized = value?.trim();
+
+  if (!normalized) {
+    throw new Error(`${fieldName} é obrigatório.`);
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error(`${fieldName} deve ser uma URL válida.`);
+  }
+
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new Error(`${fieldName} deve utilizar HTTP ou HTTPS.`);
+  }
+
+  return normalized;
+}
+
+export function normalizeString(value: unknown, fieldName: string): string {
+  const normalized = String(value ?? "").trim();
+
+  if (!normalized) {
+    throw new Error(`${fieldName} é obrigatório.`);
+  }
+
+  return normalized;
+}
+
+export function normalizeNullableString(value: unknown): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+
+  return normalized || null;
+}
+
+export function normalizeDescription(value: unknown): string | null {
+  const normalized = normalizeNullableString(value);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/\s+/g, " ").trim();
+}
+
+export function normalizeNumber(value: unknown, fieldName: string): number {
+  const numberValue = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    throw new Error(`${fieldName} deve ser um número válido.`);
+  }
+
+  return numberValue;
+}
+
+export function normalizeInteger(value: unknown, fieldName: string): number {
+  const numberValue = normalizeNumber(value, fieldName);
+
+  if (!Number.isInteger(numberValue)) {
+    throw new Error(`${fieldName} deve ser um número inteiro.`);
+  }
+
+  return numberValue;
+}
+
+function getHashParams(url: URL): URLSearchParams {
+  const hash = url.hash.replace(/^#/, "").trim();
+
+  if (!hash) {
+    return new URLSearchParams();
+  }
+
+  return new URLSearchParams(hash);
+}
+
+function extractItemIdFromPdpFilters(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/item_id\s*:\s*(MLB\d{8,})/i);
+
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+export function extractCatalogIdFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const match = url.pathname.match(/\/p\/(MLB\d+)/i);
+
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+export function extractUserProductIdFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const match = url.pathname.match(/\/up\/(ML[A-Z]U\d+)/i);
+
+  return match?.[1]?.toUpperCase() ?? null;
+}
+
+export function extractWidFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const queryWid = url.searchParams.get("wid");
+
+  if (queryWid) {
+    const match = queryWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  const hashParams = getHashParams(url);
+  const hashWid = hashParams.get("wid");
+
+  if (hashWid) {
+    const match = hashWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  return null;
+}
+
+export function extractItemIdFromUrl(value: string): string | null {
+  const url = new URL(value);
+
+  const catalogProductId = extractCatalogIdFromUrl(value);
+
+  const queryWid = url.searchParams.get("wid");
+
+  if (queryWid) {
+    const match = queryWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  const queryPdpFilters = url.searchParams.get("pdp_filters");
+  const queryPdpItem = extractItemIdFromPdpFilters(queryPdpFilters);
+
+  if (queryPdpItem) {
+    return queryPdpItem;
+  }
+
+  const hashParams = getHashParams(url);
+
+  const hashWid = hashParams.get("wid");
+
+  if (hashWid) {
+    const match = hashWid.match(/MLB\d{8,}/i);
+
+    if (match) {
+      return match[0].toUpperCase();
+    }
+  }
+
+  const hashPdpFilters = hashParams.get("pdp_filters");
+  const hashPdpItem = extractItemIdFromPdpFilters(hashPdpFilters);
+
+  if (hashPdpItem) {
+    return hashPdpItem;
+  }
+
+  const pathnameMatch = url.pathname.match(/\/(MLB\d{8,})(?:\/|$)/i);
+
+  if (pathnameMatch) {
+    const pathnameId = pathnameMatch[1]?.toUpperCase();
+
+    if (pathnameId && pathnameId !== catalogProductId) {
+      return pathnameId;
+    }
+  }
+
+  return null;
+}
+
+export function serializeOffer(offer: Offer): SerializedOffer {
+  return {
+    itemId: offer.item_id,
+    sellerId: String(offer.seller_id),
+    title: offer.title ?? null,
+    price: offer.price ?? null,
+    originalPrice: offer.original_price ?? null,
+    currency: offer.currency_id ?? null,
+    categoryId: offer.category_id ?? null,
+    warranty: offer.warranty ?? null,
+    condition: offer.condition ?? null,
+    listingTypeId: offer.listing_type_id ?? null,
+    officialStoreId:
+      offer.official_store_id !== undefined && offer.official_store_id !== null
+        ? String(offer.official_store_id)
+        : null,
+    freeShipping: Boolean(offer.shipping?.free_shipping),
+    logisticType: offer.shipping?.logistic_type ?? null,
+    userProductId: offer.user_product_id ?? null,
+    available: offer.available !== false,
+    permalink: offer.permalink ?? null,
+    thumbnail: offer.thumbnail ?? null,
+    catalogProductId: offer.catalog_product_id ?? null,
+  };
+}
+
+export function createProductSlug(title: string): string {
+  const normalized = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || `produto-${Date.now()}`;
+}
+
+export function getCatalogImageUrls(catalog: CatalogProduct): string[] {
+  return (catalog.pictures ?? [])
+    .map((picture) => picture.secure_url ?? picture.url ?? "")
+    .filter(Boolean);
+}
+
+export function normalizeImages(
+  images: Array<{
+    imageUrl: string;
+    sortOrder?: number;
+  }> = [],
+): Array<{
+  imageUrl: string;
+  sortOrder: number;
+}> {
+  return images
+    .map((image, index) => ({
+      imageUrl: image.imageUrl.trim(),
+      sortOrder: image.sortOrder !== undefined ? image.sortOrder : index,
+    }))
+    .filter((image) => Boolean(image.imageUrl));
+}
+
+export function mergeProductImages(
+  catalogImages: string[],
+  manualImages: Array<{
+    imageUrl: string;
+    sortOrder?: number;
+  }> = [],
+): Array<{
+  imageUrl: string;
+  sortOrder: number;
+}> {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  for (const imageUrl of [
+    ...catalogImages,
+    ...manualImages.map((image) => image.imageUrl),
+  ]) {
+    const normalized = imageUrl.trim();
+
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    merged.push(normalized);
+  }
+
+  return merged.map((imageUrl, index) => ({
+    imageUrl,
+    sortOrder: index,
+  }));
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.service.ts
+
+```ts
+import { load } from "cheerio";
+import { chromium } from "playwright";
+import { prisma } from "@/database/prisma";
+import type { Prisma } from "@/generated/prisma/client";
+import {
+  getCatalogOffers,
+  getCatalogOffersBySeller,
+  getCatalogProduct,
+  getMercadoLivreItem,
+} from "./mercado-livre.api";
+import {
+  connectMercadoLivre,
+  getMercadoLivreAuthorizationUrl,
+  MARKETPLACE_ID,
+} from "./mercado-livre.auth";
+
+import {
+  createProductSlug,
+  ensureValidUrl,
+  extractCatalogIdFromUrl,
+  extractItemIdFromUrl,
+  extractUserProductIdFromUrl,
+  extractWidFromUrl,
+  getCatalogImageUrls,
+  mergeProductImages,
+  normalizeDescription,
+  normalizeImages,
+  normalizeInteger,
+  normalizeNullableString,
+  normalizeNumber,
+  normalizeString,
+  serializeOffer,
+} from "./mercado-livre.helpers";
+
+import type {
+  ImportInput,
+  ResolvedMercadoLivreLink,
+  UpdateMercadoLivreProductOfferInput,
+} from "./mercado-livre.types";
+
+export { connectMercadoLivre, getMercadoLivreAuthorizationUrl };
+
+async function resolveMercadoLivreExternalLink(
+  externalLink: string,
+): Promise<ResolvedMercadoLivreLink> {
+  ensureValidUrl(externalLink, "externalLink");
+
+  const directCatalogProductId = extractCatalogIdFromUrl(externalLink);
+
+  const userProductId = extractUserProductIdFromUrl(externalLink);
+
+  const requestedWid = extractWidFromUrl(externalLink);
+
+  let requestedItemId = extractItemIdFromUrl(externalLink);
+
+  let catalogProductId = directCatalogProductId;
+
+  if (!requestedItemId && requestedWid) {
+    requestedItemId = requestedWid;
+  }
+
+  if (!catalogProductId && requestedItemId) {
+    const item = await getMercadoLivreItem(requestedItemId);
+
+    catalogProductId = item.catalog_product_id?.trim().toUpperCase() ?? null;
+  }
+
+  if (!catalogProductId) {
+    if (userProductId) {
+      throw new Error(
+        `O link contém o User Product ${userProductId}, mas não foi possível identificar um catalogProductId através do item associado.`,
+      );
+    }
+
+    throw new Error(
+      "Não foi possível identificar o catalogProductId no link do Mercado Livre.",
+    );
+  }
+
+  return {
+    externalLink,
+    catalogProductId,
+    userProductId,
+    requestedItemId,
+    requestedWid,
+  };
+}
+
+export async function findCatalogOfferByItem(
+  catalogProductId: string,
+  sellerId: string,
+  itemId: string,
+) {
+  const offers = await getCatalogOffersBySeller(catalogProductId, sellerId);
+
+  return (
+    offers.find(
+      (offer) =>
+        offer.item_id === itemId && String(offer.seller_id) === sellerId,
+    ) ?? null
   );
+}
 
-  if (!idsResponse.ok) {
-    throw new Error("Não foi possível buscar os produtos no Mercado Livre");
-  }
+export async function analyzeMercadoLivrePublicPage(url: string) {
+  ensureValidUrl(url, "url");
 
-  const ids = z
-    .object({ results: z.array(z.string()) })
-    .parse(await idsResponse.json()).results;
+  const browser = await chromium.launch({
+    headless: true,
+  });
 
-  if (!ids.length) return [];
-
-  const detailsResponse = await fetch(
-    `${apiBaseUrl}/items?ids=${ids.join(",")}`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    },
-  );
-
-  if (!detailsResponse.ok) {
-    throw new Error("Não foi possível carregar os detalhes dos produtos");
-  }
-
-  const details = z
-    .array(z.object({ body: z.record(z.string(), z.unknown()) }))
-    .parse(await detailsResponse.json());
-
-  const normalizedSearch = search?.trim().toLocaleLowerCase();
-
-  return details
-    .map(({ body }) => body)
-    .filter(
-      (item) =>
-        !normalizedSearch ||
-        String(item.title).toLocaleLowerCase().includes(normalizedSearch),
-    )
-    .map((item) => {
-      const externalId = String(item.id);
-      const title = String(item.title);
-      const currency = item.currency_id ? String(item.currency_id) : "BRL";
-      const price = Number(item.price ?? 0);
-      const imageUrl = String(item.thumbnail ?? "");
-      const affiliateUrl = String(item.permalink ?? "#");
-      const slug = createSlug(title, externalId);
-
-      return {
-        externalId,
-        title,
-        slug,
-        description: null,
-        shortDescription: null,
-        imageUrl,
-        price,
-        originalPrice: null,
-        currency,
-        rating: null,
-        reviewsCount: 0,
-        affiliateUrl,
-        available: true,
-        syncedAt: new Date(),
-
-        // relações obrigatórias
-        subcategoryId: "UUID-DA-SUBCATEGORY", // ajustar conforme sua lógica
-        marketplaceId: MARKETPLACE_ID,
-      };
+  try {
+    const page = await browser.newPage({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+      viewport: {
+        width: 1366,
+        height: 768,
+      },
+      locale: "pt-BR",
     });
+
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+
+    await page.waitForTimeout(3000);
+
+    const finalUrl = page.url();
+
+    const html = await page.content();
+
+    const $ = load(html);
+
+    const title =
+      $("title").first().text().trim() ||
+      $('meta[property="og:title"]').attr("content")?.trim() ||
+      null;
+
+    const description =
+      $('meta[name="description"]').attr("content")?.trim() ||
+      $('meta[property="og:description"]').attr("content")?.trim() ||
+      null;
+
+    const canonical = $('link[rel="canonical"]').attr("href")?.trim() || null;
+
+    const ogImage =
+      $('meta[property="og:image"]').attr("content")?.trim() || null;
+
+    const ogUrl = $('meta[property="og:url"]').attr("content")?.trim() || null;
+
+    const ogType =
+      $('meta[property="og:type"]').attr("content")?.trim() || null;
+
+    const meta = {
+      title,
+      description,
+      canonical,
+      ogImage,
+      ogUrl,
+      ogType,
+    };
+
+    const jsonLd: unknown[] = [];
+
+    $('script[type="application/ld+json"]').each((_, element) => {
+      const content = $(element).text().trim();
+
+      if (!content) {
+        return;
+      }
+
+      try {
+        jsonLd.push(JSON.parse(content));
+      } catch {
+        jsonLd.push({
+          parseError: true,
+          raw: content,
+        });
+      }
+    });
+
+    const images = $("img")
+      .map((_, element) => ({
+        src:
+          $(element).attr("src")?.trim() ||
+          $(element).attr("data-src")?.trim() ||
+          $(element).attr("data-lazy-src")?.trim() ||
+          null,
+
+        srcset: $(element).attr("srcset")?.trim() || null,
+
+        alt: $(element).attr("alt")?.trim() || null,
+      }))
+      .get()
+      .filter((image) => image.src || image.srcset);
+
+    const links = $("a[href]")
+      .map((_, element) => ({
+        href: $(element).attr("href")?.trim() || null,
+        text: $(element).text().replace(/\s+/g, " ").trim() || null,
+      }))
+      .get()
+      .filter((link) => link.href);
+
+    const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+
+    const extractedItemIds = Array.from(
+      new Set(
+        `${url}\n${finalUrl}\n${html}\n${bodyText}`.match(/\bMLB\d{6,}\b/gi) ??
+          [],
+      ),
+    ).map((itemId) => itemId.toUpperCase());
+
+    const extractedCatalogIds = Array.from(
+      new Set(
+        `${url}\n${finalUrl}\n${html}\n${bodyText}`.match(/\bMLB\d{6,}\b/gi) ??
+          [],
+      ),
+    ).map((id) => id.toUpperCase());
+
+    return {
+      requestedUrl: url,
+
+      finalUrl,
+
+      httpStatus: 200,
+
+      page: {
+        title,
+        description,
+        canonical,
+      },
+
+      openGraph: {
+        title: $('meta[property="og:title"]').attr("content")?.trim() || null,
+
+        description:
+          $('meta[property="og:description"]').attr("content")?.trim() || null,
+
+        image: ogImage,
+
+        url: ogUrl,
+
+        type: ogType,
+      },
+
+      extractedIds: {
+        itemIds: extractedItemIds,
+        catalogProductIds: extractedCatalogIds,
+      },
+
+      jsonLd,
+
+      images,
+
+      links,
+
+      bodyText,
+
+      htmlLength: html.length,
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+export async function analyzeMercadoLivreExternalLink(externalLink: string) {
+  const resolved = await resolveMercadoLivreExternalLink(externalLink);
+
+  const catalog = await getCatalogProduct(resolved.catalogProductId);
+
+  /*
+   * Primeira consulta das ofertas do catálogo.
+   */
+  let offersResponse = await getCatalogOffers(resolved.catalogProductId);
+
+  let serializedOffers = offersResponse.results.map(serializeOffer);
+
+  let availableOffers = serializedOffers.filter(
+    (offer) => offer.available !== false,
+  );
+
+  /*
+   * Se nenhuma oferta foi encontrada, fazemos uma segunda
+   * consulta ao mesmo endpoint do Mercado Livre.
+   */
+  if (availableOffers.length === 0) {
+    offersResponse = await getCatalogOffers(resolved.catalogProductId);
+
+    serializedOffers = offersResponse.results.map(serializeOffer);
+
+    availableOffers = serializedOffers.filter(
+      (offer) => offer.available !== false,
+    );
+  }
+
+  /*
+   * Nunca selecionamos automaticamente uma oferta.
+   *
+   * Mesmo que exista apenas uma, ela precisa ser exibida
+   * para o usuário confirmar.
+   */
+  const selectedOffer = null;
+
+  return {
+    externalLink,
+
+    catalogProductId: resolved.catalogProductId,
+
+    userProductId: resolved.userProductId,
+
+    requestedItemId: resolved.requestedItemId,
+
+    requestedWid: resolved.requestedWid,
+
+    catalogStatus: catalog.status ?? null,
+
+    title: catalog.name ?? "",
+
+    permalink: catalog.permalink ?? null,
+
+    imageUrls: getCatalogImageUrls(catalog),
+
+    offers: availableOffers,
+
+    selectedOffer,
+
+    /*
+     * Uma única oferta também exige confirmação.
+     */
+    requiresOfferSelection: availableOffers.length > 0,
+
+    /*
+     * Só será true depois que as duas consultas
+     * não encontrarem nenhuma oferta válida.
+     */
+    noOffersFound: availableOffers.length === 0,
+  };
+}
+
+export async function importMercadoLivreProduct(input: ImportInput) {
+  const affiliateUrl = ensureValidUrl(input.affiliateUrl, "affiliateUrl");
+
+  const externalLink = ensureValidUrl(input.externalLink, "externalLink");
+
+  const catalogProductId = normalizeString(
+    input.catalogProductId,
+    "catalogProductId",
+  ).toUpperCase();
+
+  const itemId = normalizeString(input.itemId, "itemId").toUpperCase();
+
+  const sellerId = normalizeString(input.sellerId, "sellerId");
+
+  const subcategoryId = normalizeString(input.subcategoryId, "subcategoryId");
+
+  if (!/^MLB\d+$/.test(catalogProductId)) {
+    throw new Error("catalogProductId inválido.");
+  }
+
+  if (!/^MLB\d+$/.test(itemId)) {
+    throw new Error("itemId inválido.");
+  }
+
+  if (!/^\d+$/.test(sellerId)) {
+    throw new Error("sellerId inválido.");
+  }
+
+  const resolved = await resolveMercadoLivreExternalLink(externalLink);
+
+  if (resolved.catalogProductId !== catalogProductId) {
+    throw new Error(
+      "O catalogProductId informado não corresponde ao produto do link externo.",
+    );
+  }
+
+  const marketplace = await prisma.marketplace.findUnique({
+    where: {
+      id: MARKETPLACE_ID,
+    },
+  });
+
+  if (!marketplace) {
+    throw new Error("Marketplace do Mercado Livre não encontrado.");
+  }
+
+  const subcategory = await prisma.subcategory.findUnique({
+    where: {
+      id: subcategoryId,
+    },
+  });
+
+  if (!subcategory) {
+    throw new Error("Subcategoria não encontrada.");
+  }
+
+  const catalog = await getCatalogProduct(catalogProductId);
+
+  const offer = await findCatalogOfferByItem(
+    catalogProductId,
+    sellerId,
+    itemId,
+  );
+
+  if (!offer) {
+    throw new Error(
+      "A oferta selecionada não foi encontrada para o seller informado.",
+    );
+  }
+
+  /*
+   * A oferta existe, mas o Mercado Livre informou
+   * explicitamente que ela está indisponível.
+   *
+   * Não permitimos o cadastro como produto disponível.
+   */
+  if (offer.available === false) {
+    throw new Error(
+      "A oferta selecionada está indisponível no Mercado Livre e não pode ser cadastrada.",
+    );
+  }
+
+  const existingProduct = await prisma.product.findFirst({
+    where: {
+      externalId: itemId,
+      marketplaceId: MARKETPLACE_ID,
+    },
+  });
+
+  if (existingProduct) {
+    throw new Error("Este item do Mercado Livre já está cadastrado.");
+  }
+
+  const existingMarketplaceProduct = await prisma.marketplaceProduct.findFirst({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+      itemId,
+      sellerId,
+    },
+  });
+
+  if (existingMarketplaceProduct) {
+    throw new Error("Esta oferta do Mercado Livre já está cadastrada.");
+  }
+
+  const catalogImages = getCatalogImageUrls(catalog);
+
+  const manualImages = normalizeImages(input.images ?? []);
+
+  const allImages = mergeProductImages(catalogImages, manualImages);
+
+  const primaryImage =
+    input.imageUrl?.trim() || allImages[0]?.imageUrl || catalogImages[0] || "";
+
+  if (!primaryImage) {
+    throw new Error(
+      "Não foi possível determinar a imagem principal do produto.",
+    );
+  }
+
+  const title =
+    normalizeNullableString(catalog.name) ??
+    normalizeNullableString(input.title) ??
+    "Produto Mercado Livre";
+
+  const description = normalizeDescription(input.description);
+
+  const shortDescription = normalizeDescription(input.shortDescription);
+
+  const price = normalizeNumber(offer.price, "price");
+
+  const originalPrice =
+    offer.original_price !== undefined && offer.original_price !== null
+      ? normalizeNumber(offer.original_price, "originalPrice")
+      : input.originalPrice !== undefined && input.originalPrice !== null
+        ? normalizeNumber(input.originalPrice, "originalPrice")
+        : null;
+
+  const currency = normalizeString(
+    offer.currency_id || input.currency || "BRL",
+    "currency",
+  );
+
+  const rating =
+    input.rating !== undefined && input.rating !== null
+      ? normalizeNumber(input.rating, "rating")
+      : null;
+
+  const reviewsCount =
+    input.reviewsCount !== undefined
+      ? normalizeInteger(input.reviewsCount, "reviewsCount")
+      : 0;
+
+  const slug = createProductSlug(title);
+
+  const productData: Prisma.ProductCreateInput = {
+    externalId: itemId,
+
+    title,
+    slug,
+
+    description,
+    shortDescription,
+
+    imageUrl: primaryImage,
+
+    price,
+    originalPrice,
+    currency,
+
+    rating,
+    reviewsCount,
+
+    affiliateUrl,
+
+    /*
+     * Como a oferta foi validada acima e não está
+     * explicitamente indisponível, o cadastro começa
+     * como disponível.
+     */
+    available: true,
+
+    featured: input.featured ?? false,
+
+    destaque: input.destaque ?? false,
+
+    bestSeller: input.bestSeller ?? false,
+
+    active: input.active ?? true,
+
+    seoTitle: input.seoTitle?.trim() || null,
+
+    seoDescription: input.seoDescription?.trim() || null,
+
+    subcategory: {
+      connect: {
+        id: subcategoryId,
+      },
+    },
+
+    marketplace: {
+      connect: {
+        id: MARKETPLACE_ID,
+      },
+    },
+  };
+
+  const product = await prisma.$transaction(async (transaction) => {
+    const createdProduct = await transaction.product.create({
+      data: productData,
+    });
+
+    if (allImages.length > 0) {
+      await transaction.productImage.createMany({
+        data: allImages.map((image) => ({
+          productId: createdProduct.id,
+          imageUrl: image.imageUrl,
+          sortOrder: image.sortOrder,
+        })),
+      });
+    }
+
+    await transaction.marketplaceProduct.create({
+      data: {
+        productId: createdProduct.id,
+
+        marketplaceId: MARKETPLACE_ID,
+
+        externalId: itemId,
+
+        catalogProductId,
+
+        itemId,
+
+        sellerId,
+
+        externalLink,
+
+        affiliateUrl,
+
+        price,
+
+        originalPrice,
+
+        currency,
+
+        available: true,
+
+        syncStatus: "SUCCESS",
+
+        lastSyncedAt: new Date(),
+
+        lastSyncError: null,
+      },
+    });
+
+    return createdProduct;
+  });
+
+  return prisma.product.findUnique({
+    where: {
+      id: product.id,
+    },
+    include: {
+      subcategory: {
+        include: {
+          category: true,
+        },
+      },
+      images: true,
+      marketplaceProducts: true,
+    },
+  });
+}
+
+export async function recoverLegacyProduct(productId: string) {
+  const product = await prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      marketplaceProducts: true,
+    },
+  });
+
+  if (!product) {
+    throw new Error("Produto não encontrado.");
+  }
+
+  const marketplaceProduct = product.marketplaceProducts.find(
+    (item) => item.marketplaceId === MARKETPLACE_ID,
+  );
+
+  if (!marketplaceProduct) {
+    throw new Error("Relação com o Mercado Livre não encontrada.");
+  }
+
+  return product;
 }
 
 export async function syncMercadoLivreProducts() {
-  const products = await getMercadoLivreProducts();
-  const syncedAt = new Date();
+  const marketplaceProducts = await prisma.marketplaceProduct.findMany({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+    },
+    include: {
+      product: true,
+    },
+  });
 
-  await prisma.$transaction(
-    products.map((product) =>
-      prisma.product.upsert({
-        where: {
-          externalId_marketplaceId: {
-            externalId: product.externalId,
-            marketplaceId: product.marketplaceId,
+  const results: Array<{
+    id: string;
+    productId: string;
+    status: string;
+    error?: string;
+    itemId?: string | null;
+    sellerId?: string | null;
+    previousPrice?: number | null;
+    newPrice?: number | null;
+    previousOriginalPrice?: number | null;
+    newOriginalPrice?: number | null;
+  }> = [];
+
+  for (const marketplaceProduct of marketplaceProducts) {
+    try {
+      if (
+        !marketplaceProduct.catalogProductId ||
+        !marketplaceProduct.itemId ||
+        !marketplaceProduct.sellerId
+      ) {
+        throw new Error("Dados insuficientes para sincronização.");
+      }
+
+      const previousPrice =
+        marketplaceProduct.price !== null
+          ? Number(marketplaceProduct.price)
+          : null;
+
+      const previousOriginalPrice =
+        marketplaceProduct.originalPrice !== null
+          ? Number(marketplaceProduct.originalPrice)
+          : null;
+
+      await prisma.marketplaceProduct.update({
+        where: { id: marketplaceProduct.id },
+        data: {
+          syncStatus: "SYNCING",
+          lastSyncError: null,
+        },
+      });
+
+      const offer = await findCatalogOfferByItem(
+        marketplaceProduct.catalogProductId,
+        marketplaceProduct.sellerId,
+        marketplaceProduct.itemId,
+      );
+
+      if (!offer || offer.available === false) {
+        await prisma.$transaction([
+          prisma.product.update({
+            where: {
+              id: marketplaceProduct.productId,
+            },
+            data: {
+              available: false,
+              syncedAt: new Date(),
+            },
+          }),
+
+          prisma.marketplaceProduct.update({
+            where: {
+              id: marketplaceProduct.id,
+            },
+            data: {
+              available: false,
+              syncStatus: "UNAVAILABLE",
+              lastSyncedAt: new Date(),
+              lastSyncError: "Oferta não encontrada no Mercado Livre.",
+            },
+          }),
+        ]);
+
+        results.push({
+          id: marketplaceProduct.id,
+          productId: marketplaceProduct.productId,
+          status: "UNAVAILABLE",
+        });
+
+        continue;
+      }
+
+      const price = normalizeNumber(offer.price, "price");
+
+      const originalPrice = offer.original_price ?? null;
+
+      const currency = offer.currency_id ?? "BRL";
+
+      await prisma.$transaction([
+        prisma.product.update({
+          where: {
+            id: marketplaceProduct.productId,
           },
-        },
-        create: {
-          externalId: product.externalId,
-          title: product.title,
-          slug: product.slug,
-          description: product.description,
-          shortDescription: product.shortDescription,
-          imageUrl: product.imageUrl,
-          price: product.price,
-          originalPrice: product.originalPrice,
-          currency: product.currency,
-          rating: product.rating,
-          reviewsCount: product.reviewsCount,
-          affiliateUrl: product.affiliateUrl,
-          available: true,
-          syncedAt,
+          data: {
+            price,
+            originalPrice,
+            currency,
+            available: true,
+            syncedAt: new Date(),
+          },
+        }),
 
-          // apenas IDs escalares
-          subcategoryId: product.subcategoryId,
-          marketplaceId: product.marketplaceId,
-        },
-        update: {
-          title: product.title,
-          slug: product.slug,
-          description: product.description,
-          shortDescription: product.shortDescription,
-          imageUrl: product.imageUrl,
-          price: product.price,
-          originalPrice: product.originalPrice,
-          currency: product.currency,
-          rating: product.rating,
-          reviewsCount: product.reviewsCount,
-          affiliateUrl: product.affiliateUrl,
-          available: true,
-          syncedAt,
+        prisma.marketplaceProduct.update({
+          where: {
+            id: marketplaceProduct.id,
+          },
+          data: {
+            price,
+            originalPrice,
+            currency,
+            available: true,
+            syncStatus: "SUCCESS",
+            lastSyncedAt: new Date(),
+            lastSyncError: null,
+          },
+        }),
+      ]);
 
-          subcategoryId: product.subcategoryId,
-          marketplaceId: product.marketplaceId,
+      results.push({
+        id: marketplaceProduct.id,
+        productId: marketplaceProduct.productId,
+        status: "SUCCESS",
+        itemId: marketplaceProduct.itemId,
+        sellerId: marketplaceProduct.sellerId,
+        previousPrice,
+        newPrice: price,
+        previousOriginalPrice,
+        newOriginalPrice: originalPrice,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Erro desconhecido.";
+
+      await prisma.marketplaceProduct.update({
+        where: {
+          id: marketplaceProduct.id,
         },
-      }),
-    ),
+        data: {
+          syncStatus: "ERROR",
+          lastSyncedAt: new Date(),
+          lastSyncError: message,
+        },
+      });
+
+      results.push({
+        id: marketplaceProduct.id,
+        productId: marketplaceProduct.productId,
+        status: "ERROR",
+        error: message,
+      });
+    }
+  }
+
+  return {
+    message: "Produtos do Mercado Livre sincronizados com sucesso",
+    products: results,
+  };
+}
+
+export async function updateMercadoLivreProductOffer(
+  productId: string,
+  input: UpdateMercadoLivreProductOfferInput,
+) {
+  const externalLink = ensureValidUrl(input.externalLink, "externalLink");
+
+  const catalogProductId = normalizeString(
+    input.catalogProductId,
+    "catalogProductId",
+  ).toUpperCase();
+
+  const itemId = normalizeString(input.itemId, "itemId").toUpperCase();
+
+  const sellerId = normalizeString(input.sellerId, "sellerId");
+
+  const resolved = await resolveMercadoLivreExternalLink(externalLink);
+
+  if (resolved.catalogProductId !== catalogProductId) {
+    throw new Error(
+      "O catalogProductId informado não corresponde ao produto do link externo.",
+    );
+  }
+
+  const product = await prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      marketplaceProducts: true,
+    },
+  });
+
+  if (!product) {
+    throw new Error("Produto não encontrado.");
+  }
+
+  const marketplaceProduct = product.marketplaceProducts.find(
+    (item) => item.marketplaceId === MARKETPLACE_ID,
   );
 
-  const externalIds = products.map((p) => p.externalId);
+  const offer = await findCatalogOfferByItem(
+    catalogProductId,
+    sellerId,
+    itemId,
+  );
 
-  await prisma.product.updateMany({
-    where: externalIds.length
-      ? {
-          marketplaceId: MARKETPLACE_ID,
-          externalId: { notIn: externalIds },
-        }
-      : { marketplaceId: MARKETPLACE_ID },
-    data: { available: false, syncedAt },
+  if (!offer) {
+    throw new Error("A oferta selecionada não foi encontrada.");
+  }
+
+  /*
+   * A oferta ainda existe na resposta da API, mas está
+   * explicitamente marcada como indisponível.
+   *
+   * Nesse caso a atualização não deve transformar o
+   * produto em SUCCESS/disponível.
+   */
+  if (offer.available === false) {
+    throw new Error(
+      "A oferta selecionada está indisponível no Mercado Livre e não pode ser vinculada ao produto.",
+    );
+  }
+
+  const duplicateOffer = await prisma.marketplaceProduct.findFirst({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+      itemId,
+      sellerId,
+      ...(marketplaceProduct
+        ? {
+            id: {
+              not: marketplaceProduct.id,
+            },
+          }
+        : {}),
+    },
   });
 
-  return prisma.product.findMany({
-    where: { marketplaceId: MARKETPLACE_ID, available: true },
-    orderBy: { updatedAt: "desc" },
+  if (duplicateOffer) {
+    throw new Error("Esta oferta já está vinculada a outro produto.");
+  }
+
+  const price = normalizeNumber(offer.price, "price");
+
+  const originalPrice = offer.original_price ?? null;
+
+  const previousPrice = marketplaceProduct?.price ?? null;
+
+  const previousOriginalPrice = marketplaceProduct?.originalPrice ?? null;
+
+  const currency = offer.currency_id ?? "BRL";
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.product.update({
+      where: {
+        id: productId,
+      },
+      data: {
+        externalId: itemId,
+
+        price,
+
+        originalPrice,
+
+        currency,
+
+        available: true,
+
+        syncedAt: new Date(),
+      },
+    });
+
+    if (marketplaceProduct) {
+      await transaction.marketplaceProduct.update({
+        where: {
+          id: marketplaceProduct.id,
+        },
+        data: {
+          externalId: itemId,
+
+          catalogProductId,
+
+          itemId,
+
+          sellerId,
+
+          externalLink,
+
+          price,
+
+          originalPrice,
+
+          currency,
+
+          available: true,
+
+          syncStatus: "SUCCESS",
+
+          lastSyncedAt: new Date(),
+
+          lastSyncError: null,
+        },
+      });
+    } else {
+      await transaction.marketplaceProduct.create({
+        data: {
+          productId,
+
+          marketplaceId: MARKETPLACE_ID,
+
+          externalId: itemId,
+
+          catalogProductId,
+
+          itemId,
+
+          sellerId,
+
+          externalLink,
+
+          affiliateUrl: product.affiliateUrl,
+
+          price,
+
+          originalPrice,
+
+          currency,
+
+          available: true,
+
+          syncStatus: "SUCCESS",
+
+          lastSyncedAt: new Date(),
+
+          lastSyncError: null,
+        },
+      });
+    }
+  });
+
+  return prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      subcategory: {
+        include: {
+          category: true,
+        },
+      },
+      images: true,
+      marketplaceProducts: true,
+    },
   });
 }
+
+export async function getMercadoLivreProducts(search?: string) {
+  const normalizedSearch = search?.trim();
+
+  return prisma.product.findMany({
+    where: {
+      marketplaceId: MARKETPLACE_ID,
+
+      ...(normalizedSearch
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: normalizedSearch,
+                  mode: "insensitive",
+                },
+              },
+              {
+                externalId: {
+                  contains: normalizedSearch,
+                  mode: "insensitive",
+                },
+              },
+            ],
+          }
+        : {}),
+    },
+
+    include: {
+      subcategory: {
+        include: {
+          category: true,
+        },
+      },
+      images: true,
+      marketplaceProducts: true,
+    },
+
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+}
+
+```
+
+## src\services\mercado-livre\mercado-livre.types.ts
+
+```ts
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  scope?: string;
+  user_id?: number;
+  refresh_token: string;
+};
+
+export type CatalogProduct = {
+  id: string;
+  status?: string;
+  name?: string;
+  domain_id?: string;
+  permalink?: string;
+  pictures?: Array<{
+    id?: string;
+    url?: string;
+    secure_url?: string;
+  }>;
+};
+
+export type MercadoLivreItem = {
+  id: string;
+  title?: string;
+  catalog_product_id?: string | null;
+  category_id?: string | null;
+  price?: number | null;
+  original_price?: number | null;
+  currency_id?: string | null;
+  available_quantity?: number | null;
+  condition?: string | null;
+  permalink?: string | null;
+  thumbnail?: string | null;
+  pictures?: Array<{
+    id?: string;
+    url?: string;
+    secure_url?: string;
+  }>;
+  seller?: {
+    id?: number | string;
+  };
+};
+
+export type Offer = {
+  item_id: string;
+  seller_id: string | number;
+  title?: string;
+  price?: number;
+  original_price?: number;
+  currency_id?: string;
+  available?: boolean;
+  permalink?: string;
+  thumbnail?: string;
+  catalog_product_id?: string | null;
+  category_id?: string | null;
+  warranty?: string | null;
+  condition?: string | null;
+  listing_type_id?: string | null;
+  official_store_id?: string | number | null;
+  shipping?: {
+    free_shipping?: boolean;
+    logistic_type?: string | null;
+  } | null;
+  user_product_id?: string | null;
+};
+
+export type ImportImageInput = {
+  imageUrl: string;
+  sortOrder?: number;
+};
+
+export type ImportInput = {
+  affiliateUrl: string;
+  externalLink: string;
+  catalogProductId: string;
+  itemId: string;
+  sellerId: string;
+  subcategoryId: string;
+  title: string;
+  description?: string;
+  shortDescription?: string;
+  imageUrl?: string;
+  images?: ImportImageInput[];
+  price?: number;
+  originalPrice?: number;
+  currency?: string;
+  rating?: number;
+  reviewsCount?: number;
+  featured?: boolean;
+  destaque?: boolean;
+  bestSeller?: boolean;
+  available?: boolean;
+  active?: boolean;
+  seoTitle?: string;
+  seoDescription?: string;
+};
+
+export type UpdateMercadoLivreProductOfferInput = {
+  externalLink: string;
+  catalogProductId: string;
+  itemId: string;
+  sellerId: string;
+};
+
+export type SerializedOffer = {
+  itemId: string;
+  sellerId: string;
+  title: string | null;
+  price: number | null;
+  originalPrice: number | null;
+  currency: string | null;
+  categoryId: string | null;
+  warranty: string | null;
+  condition: string | null;
+  listingTypeId: string | null;
+  officialStoreId: string | null;
+  freeShipping: boolean;
+  logisticType: string | null;
+  userProductId: string | null;
+  available: boolean;
+  permalink: string | null;
+  thumbnail: string | null;
+  catalogProductId: string | null;
+};
+
+export type ResolvedMercadoLivreLink = {
+  externalLink: string;
+  catalogProductId: string;
+  userProductId: string | null;
+  requestedItemId: string | null;
+  requestedWid: string | null;
+};
+
+```
+
+## src\services\mercado-livre-service.ts
+
+```ts
+export {
+  analyzeMercadoLivreExternalLink,
+  connectMercadoLivre,
+  findCatalogOfferByItem,
+  getMercadoLivreAuthorizationUrl,
+  getMercadoLivreProducts,
+  importMercadoLivreProduct,
+  recoverLegacyProduct,
+  syncMercadoLivreProducts,
+  updateMercadoLivreProductOffer,
+} from "./mercado-livre/mercado-livre.service";
+
+export type {
+  ImportImageInput,
+  ImportInput,
+  UpdateMercadoLivreProductOfferInput,
+} from "./mercado-livre/mercado-livre.types";
+
 ```
 
 ## src\services\products-service.ts
@@ -8265,6 +12107,8 @@ type CreateProductInput = {
   subcategoryId: string;
   marketplaceId: string;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   available?: boolean | undefined;
   active?: boolean | undefined;
   seoTitle?: string | undefined;
@@ -8286,6 +12130,8 @@ type UpdateProductInput = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   available?: boolean | undefined;
   active?: boolean | undefined;
   seoTitle?: string | undefined;
@@ -8296,6 +12142,8 @@ type ProductStatusInput = {
   active?: boolean | undefined;
   available?: boolean | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
 };
 
 type ProductQuery = {
@@ -8304,6 +12152,8 @@ type ProductQuery = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
 };
 
 type ProductAdminQuery = {
@@ -8311,6 +12161,8 @@ type ProductAdminQuery = {
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
   featured?: boolean | undefined;
+  destaque?: boolean | undefined;
+  bestSeller?: boolean | undefined;
   active?: boolean | undefined;
   available?: boolean | undefined;
 };
@@ -8325,11 +12177,34 @@ type ProductWithRelations = {
       slug?: string;
     } | null;
   } | null;
+
   images?: Array<{
     id: string;
     imageUrl: string;
     sortOrder: number;
   }>;
+
+  marketplaceProducts?: Array<{
+    id: string;
+    productId: string;
+    marketplaceId: string;
+    externalId: string;
+    catalogProductId: string | null;
+    itemId: string | null;
+    sellerId: string | null;
+    externalLink: string | null;
+    affiliateUrl: string;
+    price: unknown;
+    originalPrice: unknown;
+    currency: string;
+    rating: unknown;
+    reviewsCount: number;
+    available: boolean;
+    syncStatus: string;
+    lastSyncedAt: Date | null;
+    lastSyncError: string | null;
+  }>;
+
   [key: string]: unknown;
 };
 
@@ -8412,6 +12287,18 @@ export const productsService = {
               featured: query.featured,
             }
           : {}),
+
+        ...(query.destaque !== undefined
+          ? {
+              destaque: query.destaque,
+            }
+          : {}),
+
+        ...(query.bestSeller !== undefined
+          ? {
+              bestSeller: query.bestSeller,
+            }
+          : {}),
       },
 
       include: {
@@ -8476,6 +12363,18 @@ export const productsService = {
             }
           : {}),
 
+        ...(query.destaque !== undefined
+          ? {
+              destaque: query.destaque,
+            }
+          : {}),
+
+        ...(query.bestSeller !== undefined
+          ? {
+              bestSeller: query.bestSeller,
+            }
+          : {}),
+
         ...(query.active !== undefined
           ? {
               active: query.active,
@@ -8531,6 +12430,8 @@ export const productsService = {
             sortOrder: "asc",
           },
         },
+
+        marketplaceProducts: true,
       },
     });
 
@@ -8624,6 +12525,8 @@ export const productsService = {
 
         available: data.available ?? true,
         featured: data.featured ?? false,
+        destaque: data.destaque ?? false,
+        bestSeller: data.bestSeller ?? false,
         active: data.active ?? true,
 
         ...(data.seoTitle !== undefined
@@ -8769,6 +12672,18 @@ export const productsService = {
               }
             : {}),
 
+          ...(data.destaque !== undefined
+            ? {
+                destaque: data.destaque,
+              }
+            : {}),
+
+          ...(data.bestSeller !== undefined
+            ? {
+                bestSeller: data.bestSeller,
+              }
+            : {}),
+
           ...(data.active !== undefined
             ? {
                 active: data.active,
@@ -8864,6 +12779,18 @@ export const productsService = {
               featured: data.featured,
             }
           : {}),
+
+        ...(data.destaque !== undefined
+          ? {
+              destaque: data.destaque,
+            }
+          : {}),
+
+        ...(data.bestSeller !== undefined
+          ? {
+              bestSeller: data.bestSeller,
+            }
+          : {}),
       },
 
       include: {
@@ -8894,6 +12821,7 @@ function createProductSlug(title: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
 ```
 
 ## src\services\search-service.ts
@@ -9043,6 +12971,7 @@ export const searchService = {
     };
   },
 };
+
 ```
 
 ## src\services\subcategories-services.ts
@@ -9095,12 +13024,14 @@ export const subcategoriesService = {
     });
   },
 };
+
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
+
 ```
 
 ## src\types\express\index.d.ts
@@ -9114,6 +13045,7 @@ declare namespace Express {
     };
   }
 }
+
 ```
 
 ## src\utils\AppError.ts
@@ -9130,6 +13062,7 @@ class AppError {
 }
 
 export { AppError };
+
 ```
 
 ## src\utils\createSlug.ts
@@ -9150,19 +13083,13 @@ export function createSlug(value: string, suffix?: string) {
 
   return `${slug}-${suffix}`;
 }
+
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import {
-  readdirSync,
-  statSync,
-  readFileSync,
-  appendFileSync,
-  existsSync,
-  unlinkSync,
-} from "fs";
+import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -9178,16 +13105,7 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".json",
-  ".md",
-  ".env",
-  ".css",
-];
+const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -9196,7 +13114,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js",
+  "postcss.config.js"
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -9209,8 +13127,7 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext))
-    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -9227,20 +13144,13 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if (
-        (extensions.includes(ext) || specialFiles.includes(file)) &&
-        !excludeFiles.includes(file)
-      ) {
+      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error(
-            "⚠️ Erro ao ler arquivo:",
-            fullPath,
-            (err as Error).message,
-          );
+          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
         }
       }
     }
@@ -9250,6 +13160,7 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
+
 ```
 
 ## tools\instrucoes.md
@@ -9417,6 +13328,8 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
+
+
 
 ## tsconfig.json
 
@@ -9453,4 +13366,5 @@ npm run generate-md
   "include": ["src", "src/types", "env.ts"],
   "exclude": ["node_modules", "dist"]
 }
+
 ```

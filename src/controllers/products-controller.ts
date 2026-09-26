@@ -1,16 +1,13 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
-
 import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
 import { productsService } from "@/services/products-service";
-
 import { createSlug } from "@/utils/createSlug";
 
 const productImageSchema = z.object({
   imageUrl: z.string().trim().url(),
   sortOrder: z.coerce.number().int().nonnegative().optional(),
 });
-
 const createProductSchema = z.object({
   title: z.string().trim().min(1),
   description: z.string().trim().optional(),
@@ -26,12 +23,13 @@ const createProductSchema = z.object({
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
   featured: z.coerce.boolean().default(false),
+  destaque: z.coerce.boolean().default(false),
+  bestSeller: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
   active: z.coerce.boolean().default(true),
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
-
 const updateProductSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().trim().optional(),
@@ -47,40 +45,41 @@ const updateProductSchema = z.object({
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
   featured: z.coerce.boolean().optional(),
+  destaque: z.coerce.boolean().optional(),
+  bestSeller: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
   active: z.coerce.boolean().optional(),
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
-
 const updateProductStatusSchema = z
   .object({
     active: z.coerce.boolean().optional(),
     available: z.coerce.boolean().optional(),
     featured: z.coerce.boolean().optional(),
+    destaque: z.coerce.boolean().optional(),
+    bestSeller: z.coerce.boolean().optional(),
   })
   .refine(
     (data) =>
       data.active !== undefined ||
       data.available !== undefined ||
-      data.featured !== undefined,
-    {
-      message: "Informe pelo menos um status para atualizar.",
-    },
+      data.featured !== undefined ||
+      data.destaque !== undefined ||
+      data.bestSeller !== undefined,
+    { message: "Informe pelo menos um status para atualizar." },
   );
-
-const idSchema = z.object({
-  id: z.string().uuid(),
-});
-
-const slugSchema = z.object({
-  slug: z.string().trim().min(1),
-});
-
+const idSchema = z.object({ id: z.string().uuid() });
+const slugSchema = z.object({ slug: z.string().trim().min(1) });
+const productSortSchema = z.enum([
+  "recent",
+  "price_asc",
+  "price_desc",
+  "rating",
+]);
 type CreateProductData = z.infer<typeof createProductSchema>;
 type UpdateProductData = z.infer<typeof updateProductSchema>;
 type UpdateProductStatusData = z.infer<typeof updateProductStatusSchema>;
-
 export class ProductsController {
   async index(request: Request, response: Response) {
     const query = z
@@ -90,16 +89,16 @@ export class ProductsController {
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
+        destaque: z.coerce.boolean().optional(),
+        bestSeller: z.coerce.boolean().optional(),
+        page: z.coerce.number().int().positive().default(1),
+        limit: z.coerce.number().int().positive().max(100).default(24),
+        sort: productSortSchema.default("recent"),
       })
       .parse(request.query);
-
-    const products = await productsService.list(query);
-
-    return response.json({
-      products,
-    });
+    const result = await productsService.list(query);
+    return response.json(result);
   }
-
   async indexAdmin(request: Request, response: Response) {
     const query = z
       .object({
@@ -107,123 +106,87 @@ export class ProductsController {
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
         featured: z.coerce.boolean().optional(),
+        destaque: z.coerce.boolean().optional(),
+        bestSeller: z.coerce.boolean().optional(),
         active: z.coerce.boolean().optional(),
         available: z.coerce.boolean().optional(),
       })
       .parse(request.query);
-
     const products = await productsService.listAdmin(query);
-
-    return response.json({
-      products,
-    });
+    return response.json({ products });
   }
-
   async create(request: Request, response: Response) {
     const data: CreateProductData = createProductSchema.parse(request.body);
     const slug = createSlug(data.title);
     const existingProduct = await productsService.findBySlug(slug);
-
     if (existingProduct) {
-      return response.status(409).json({
-        message: "Já existe um produto com esse título.",
-      });
+      return response
+        .status(409)
+        .json({ message: "Já existe um produto com esse título." });
     }
-
     const product = await productsService.create(data);
-
     return response.status(201).json({ product });
   }
-
   async update(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const data: UpdateProductData = updateProductSchema.parse(request.body);
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     if (data.title && data.title !== product.title) {
       const slug = createSlug(data.title);
       const existingProduct = await productsService.findBySlugExceptId(
         slug,
         product.id,
       );
-
       if (existingProduct) {
-        return response.status(409).json({
-          message: "Já existe um produto com esse título.",
-        });
+        return response
+          .status(409)
+          .json({ message: "Já existe um produto com esse título." });
       }
     }
-
     const updatedProduct = await productsService.update(product.id, data);
-
     return response.json({ product: updatedProduct });
   }
-
   async updateStatus(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const data: UpdateProductStatusData = updateProductStatusSchema.parse(
       request.body,
     );
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     const updatedProduct = await productsService.updateStatus(product.id, data);
-
     return response.json({ product: updatedProduct });
   }
-
   async sync(request: Request, response: Response) {
     const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
     const receivedSecret = request.header("x-sync-token");
-
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({
-        message: "Não autorizado",
-      });
+      return response.status(401).json({ message: "Não autorizado" });
     }
-
-    const products = await syncMercadoLivreProducts();
-
+    const result = await syncMercadoLivreProducts();
     return response.json({
-      products,
-      synced: products.length,
+      products: result.products,
+      synced: result.products.length,
     });
   }
-
   async showById(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     return response.json({ product });
   }
-
   async show(request: Request, response: Response) {
     const { slug } = slugSchema.parse(request.params);
     const product = await productsService.findBySlug(slug);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     return response.json({ product });
   }
 }
