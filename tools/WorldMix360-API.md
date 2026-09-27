@@ -1,67 +1,3 @@
-
-## .env
-
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5434/world_mix360?schema=public"
-
-JWT_SECRET=r0s3nd0
-
-PRODUCT_SYNC_SECRET=3ee7524986e159cb3c02a833149821f25ede1614dc0944ded3451cd550c04550
-
-MELI_CLIENT_ID=6660819157435013
-
-MELI_CLIENT_SECRET=dEH7J1bZoqqMcEgBKhllAvlnUlyzKQZM
-
-MELI_REDIRECT_URI=https://infrastructure-shorts-stroke-entities.trycloudflare.com/mercado-livre/callback
-```
-
-## env.d.ts
-
-```ts
-export declare const env: {
-    DATABASE_URL: string;
-    JWT_SECRET: string;
-};
-//# sourceMappingURL=env.d.ts.map
-```
-
-## env.js
-
-```js
-import process from "process";
-import { z } from "zod";
-
-const envSchema = z.object({
-  DATABASE_URL: z.string().url(),
-  JWT_SECRET: z.string(),
-});
-export const env = envSchema.parse(process.env);
-//# sourceMappingURL=env.js.map
-
-```
-
-## env.ts
-
-```ts
-import "dotenv/config";
-import process from "process";
-import { z } from "zod";
-
-const envSchema = z.object({
-  DATABASE_URL: z.string().url(),
-  JWT_SECRET: z.string(),
-  MELI_CLIENT_ID: z.string().optional(),
-  MELI_CLIENT_SECRET: z.string().optional(),
-  MELI_REDIRECT_URI: z.string().url().optional(),
-  WEB_URL: z.string().url().default("http://localhost:5173"),
-  CORS_ORIGIN: z.string().url().default("http://localhost:5173"),
-  PRODUCT_SYNC_SECRET: z.string().optional(),
-});
-
-export const env = envSchema.parse(process.env);
-
-```
-
 ## package.json
 
 ```json
@@ -109,7 +45,6 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
-
 ```
 
 ## prisma7.config.ts
@@ -127,7 +62,6 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
-
 ```
 
 ## README.md
@@ -194,7 +128,6 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
-
 ## skills-lock.json
 
 ```json
@@ -257,7 +190,6 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
-
 ```
 
 ## src\app.ts
@@ -302,7 +234,6 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
-
 ```
 
 ## src\configs\auth.ts
@@ -323,7 +254,6 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
-
 ```
 
 ## src\configs\mercado-livre.ts
@@ -350,7 +280,6 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
-
 ```
 
 ## src\controllers\blog-categories-controller.ts
@@ -577,7 +506,6 @@ export class BlogCategoriesController {
     return response.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\blog-controller.ts
@@ -859,7 +787,6 @@ export class BlogController {
     });
   }
 }
-
 ```
 
 ## src\controllers\categories-controllers.ts
@@ -1012,7 +939,6 @@ export class CategoryController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\marketplace-controller.ts
@@ -1204,7 +1130,6 @@ export class MarketplaceController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -1416,7 +1341,6 @@ export class MercadoLivreController {
     });
   }
 }
-
 ```
 
 ## src\controllers\products-controller.ts
@@ -1424,17 +1348,14 @@ export class MercadoLivreController {
 ```ts
 import type { Request, Response } from "express";
 import { z } from "zod";
-
 import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
 import { productsService } from "@/services/products-service";
-
 import { createSlug } from "@/utils/createSlug";
 
 const productImageSchema = z.object({
   imageUrl: z.string().trim().url(),
   sortOrder: z.coerce.number().int().nonnegative().optional(),
 });
-
 const createProductSchema = z.object({
   title: z.string().trim().min(1),
   description: z.string().trim().optional(),
@@ -1457,7 +1378,6 @@ const createProductSchema = z.object({
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
-
 const updateProductSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().trim().optional(),
@@ -1480,7 +1400,6 @@ const updateProductSchema = z.object({
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
-
 const updateProductStatusSchema = z
   .object({
     active: z.coerce.boolean().optional(),
@@ -1496,23 +1415,19 @@ const updateProductStatusSchema = z
       data.featured !== undefined ||
       data.destaque !== undefined ||
       data.bestSeller !== undefined,
-    {
-      message: "Informe pelo menos um status para atualizar.",
-    },
+    { message: "Informe pelo menos um status para atualizar." },
   );
-
-const idSchema = z.object({
-  id: z.string().uuid(),
-});
-
-const slugSchema = z.object({
-  slug: z.string().trim().min(1),
-});
-
+const idSchema = z.object({ id: z.string().uuid() });
+const slugSchema = z.object({ slug: z.string().trim().min(1) });
+const productSortSchema = z.enum([
+  "recent",
+  "price_asc",
+  "price_desc",
+  "rating",
+]);
 type CreateProductData = z.infer<typeof createProductSchema>;
 type UpdateProductData = z.infer<typeof updateProductSchema>;
 type UpdateProductStatusData = z.infer<typeof updateProductStatusSchema>;
-
 export class ProductsController {
   async index(request: Request, response: Response) {
     const query = z
@@ -1524,16 +1439,14 @@ export class ProductsController {
         featured: z.coerce.boolean().optional(),
         destaque: z.coerce.boolean().optional(),
         bestSeller: z.coerce.boolean().optional(),
+        page: z.coerce.number().int().positive().default(1),
+        limit: z.coerce.number().int().positive().max(100).default(24),
+        sort: productSortSchema.default("recent"),
       })
       .parse(request.query);
-
-    const products = await productsService.list(query);
-
-    return response.json({
-      products,
-    });
+    const result = await productsService.list(query);
+    return response.json(result);
   }
-
   async indexAdmin(request: Request, response: Response) {
     const query = z
       .object({
@@ -1547,123 +1460,84 @@ export class ProductsController {
         available: z.coerce.boolean().optional(),
       })
       .parse(request.query);
-
     const products = await productsService.listAdmin(query);
-
-    return response.json({
-      products,
-    });
+    return response.json({ products });
   }
-
   async create(request: Request, response: Response) {
     const data: CreateProductData = createProductSchema.parse(request.body);
     const slug = createSlug(data.title);
     const existingProduct = await productsService.findBySlug(slug);
-
     if (existingProduct) {
-      return response.status(409).json({
-        message: "Já existe um produto com esse título.",
-      });
+      return response
+        .status(409)
+        .json({ message: "Já existe um produto com esse título." });
     }
-
     const product = await productsService.create(data);
-
     return response.status(201).json({ product });
   }
-
   async update(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const data: UpdateProductData = updateProductSchema.parse(request.body);
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     if (data.title && data.title !== product.title) {
       const slug = createSlug(data.title);
       const existingProduct = await productsService.findBySlugExceptId(
         slug,
         product.id,
       );
-
       if (existingProduct) {
-        return response.status(409).json({
-          message: "Já existe um produto com esse título.",
-        });
+        return response
+          .status(409)
+          .json({ message: "Já existe um produto com esse título." });
       }
     }
-
     const updatedProduct = await productsService.update(product.id, data);
-
     return response.json({ product: updatedProduct });
   }
-
   async updateStatus(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const data: UpdateProductStatusData = updateProductStatusSchema.parse(
       request.body,
     );
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     const updatedProduct = await productsService.updateStatus(product.id, data);
-
     return response.json({ product: updatedProduct });
   }
-
   async sync(request: Request, response: Response) {
     const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
     const receivedSecret = request.header("x-sync-token");
-
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({
-        message: "Não autorizado",
-      });
+      return response.status(401).json({ message: "Não autorizado" });
     }
-
     const result = await syncMercadoLivreProducts();
-
     return response.json({
       products: result.products,
       synced: result.products.length,
     });
   }
-
   async showById(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     return response.json({ product });
   }
-
   async show(request: Request, response: Response) {
     const { slug } = slugSchema.parse(request.params);
     const product = await productsService.findBySlug(slug);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     return response.json({ product });
   }
 }
-
 ```
 
 ## src\controllers\search-controller.ts
@@ -1694,7 +1568,6 @@ export class SearchController {
     });
   }
 }
-
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -1742,7 +1615,6 @@ class SessionsController {
 }
 
 export { SessionsController };
-
 ```
 
 ## src\controllers\subcategories-controller.ts
@@ -1931,7 +1803,6 @@ export class SubcategoriesController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\users-controllers.ts
@@ -2048,7 +1919,6 @@ class UserController {
 }
 
 export { UserController };
-
 ```
 
 ## src\database\prisma.ts
@@ -2069,7 +1939,6 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
-
 ```
 
 ## src\middleware\ensure-admin.ts
@@ -2090,7 +1959,6 @@ export function ensureAdmin(
 
   return next();
 }
-
 ```
 
 ## src\middleware\ensure-authenticated.ts
@@ -2137,7 +2005,6 @@ export function ensureAuthenticated(
     throw new AppError("Token inválido ou expirado", 401);
   }
 }
-
 ```
 
 ## src\middleware\error-handling.ts
@@ -2164,7 +2031,6 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
-
 ```
 
 ## src\routes\blog-categories-routes.ts
@@ -2218,7 +2084,6 @@ blogCategoriesRoutes.delete(
 );
 
 export { blogCategoriesRoutes };
-
 ```
 
 ## src\routes\blog-routes.ts
@@ -2274,7 +2139,6 @@ blogRoutes.delete(
 blogRoutes.get("/:slug", blogController.show);
 
 export { blogRoutes };
-
 ```
 
 ## src\routes\categories-routes.ts
@@ -2318,7 +2182,6 @@ categoriesRouter.delete(
 );
 
 export { categoriesRouter as categoriesRoutes };
-
 ```
 
 ## src\routes\index.ts
@@ -2361,7 +2224,6 @@ routes.use("/blog/categories", blogCategoriesRoutes);
 routes.use("/blog", blogRoutes);
 
 export { routes };
-
 ```
 
 ## src\routes\marketplace-routes.ts
@@ -2404,7 +2266,6 @@ marketplaceRouter.delete(
 );
 
 export { marketplaceRouter as marketplaceRoutes };
-
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -2537,7 +2398,6 @@ mercadoLivreRoutes.post(
 );
 
 export { mercadoLivreRoutes };
-
 ```
 
 ## src\routes\product-routes.ts
@@ -2606,7 +2466,6 @@ productRoutes.post(
 );
 
 export { productRoutes };
-
 ```
 
 ## src\routes\search-routes.ts
@@ -2623,7 +2482,6 @@ const searchController = new SearchController();
 searchRouter.get("/", searchController.search);
 
 export { searchRouter };
-
 ```
 
 ## src\routes\sessions-routes.ts
@@ -2638,7 +2496,6 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
-
 ```
 
 ## src\routes\subcategories-routes.ts
@@ -2681,7 +2538,6 @@ subcategoriesRouter.delete(
 );
 
 export { subcategoriesRouter as subcategoriesRoutes };
-
 ```
 
 ## src\routes\user-routes.ts
@@ -2713,7 +2569,6 @@ userRoutes.patch(
 userRoutes.put("/:id", ensureAuthenticated, ensureAdmin, userController.update);
 
 export { userRoutes };
-
 ```
 
 ## src\server.ts
@@ -2726,7 +2581,6 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
-
 ```
 
 ## src\services\blog-categories-service.ts
@@ -2981,7 +2835,6 @@ export const blogCategoriesService = {
     });
   },
 };
-
 ```
 
 ## src\services\blog-service.ts
@@ -3489,7 +3342,6 @@ export const blogService = {
     });
   },
 };
-
 ```
 
 ## src\services\categories-service.ts
@@ -3540,7 +3392,6 @@ export const categoryService = {
     });
   },
 };
-
 ```
 
 ## src\services\marketplace-service.ts
@@ -3591,7 +3442,6 @@ export const marketplaceService = {
     });
   },
 };
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.api.ts
@@ -3659,7 +3509,6 @@ export async function getCatalogOffersBySeller(
     (offer) => String(offer.seller_id) === sellerId,
   );
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.auth.ts
@@ -3904,7 +3753,6 @@ export async function connectMercadoLivre(code: string, state: string) {
     expiresIn: token.expires_in,
   };
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.helpers.ts
@@ -4197,7 +4045,6 @@ export function mergeProductImages(
     sortOrder: index,
   }));
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.service.ts
@@ -5250,7 +5097,6 @@ export async function getMercadoLivreProducts(search?: string) {
     },
   });
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.types.ts
@@ -5389,7 +5235,6 @@ export type ResolvedMercadoLivreLink = {
   requestedItemId: string | null;
   requestedWid: string | null;
 };
-
 ```
 
 ## src\services\mercado-livre-service.ts
@@ -5412,7 +5257,6 @@ export type {
   ImportInput,
   UpdateMercadoLivreProductOfferInput,
 } from "./mercado-livre/mercado-livre.types";
-
 ```
 
 ## src\services\products-service.ts
@@ -5479,6 +5323,8 @@ type ProductStatusInput = {
   bestSeller?: boolean | undefined;
 };
 
+type ProductSort = "recent" | "price_asc" | "price_desc" | "rating";
+
 type ProductQuery = {
   search?: string | undefined;
   category?: string | undefined;
@@ -5487,6 +5333,9 @@ type ProductQuery = {
   featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: ProductSort | undefined;
 };
 
 type ProductAdminQuery = {
@@ -5556,104 +5405,138 @@ function serializeProducts<T extends ProductWithRelations>(products: T[]) {
 
 export const productsService = {
   async list(query: ProductQuery = {}) {
-    const products = await prisma.product.findMany({
-      where: {
-        active: true,
-        available: true,
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 24;
+    const skip = (page - 1) * limit;
+    const sort = query.sort ?? "recent";
 
-        ...(query.search
-          ? {
-              OR: [
-                {
-                  title: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  description: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
+    const where = {
+      active: true,
+      available: true,
 
-        ...(query.category
-          ? {
-              subcategory: {
-                category: {
-                  OR: [
-                    {
-                      slug: {
-                        equals: query.category,
-                        mode: "insensitive",
-                      },
-                    },
-                    {
-                      name: {
-                        equals: query.category,
-                        mode: "insensitive",
-                      },
-                    },
-                  ],
+      ...(query.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: query.search,
+                  mode: "insensitive" as const,
                 },
               },
-            }
-          : {}),
+              {
+                description: {
+                  contains: query.search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
 
-        ...(query.subcategoryId
-          ? {
-              subcategoryId: query.subcategoryId,
-            }
-          : {}),
+      ...(query.category
+        ? {
+            subcategory: {
+              category: {
+                OR: [
+                  {
+                    slug: {
+                      equals: query.category,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    name: {
+                      equals: query.category,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            },
+          }
+        : {}),
 
-        ...(query.marketplaceId
-          ? {
-              marketplaceId: query.marketplaceId,
-            }
-          : {}),
+      ...(query.subcategoryId
+        ? {
+            subcategoryId: query.subcategoryId,
+          }
+        : {}),
 
-        ...(query.featured !== undefined
-          ? {
-              featured: query.featured,
-            }
-          : {}),
+      ...(query.marketplaceId
+        ? {
+            marketplaceId: query.marketplaceId,
+          }
+        : {}),
 
-        ...(query.destaque !== undefined
-          ? {
-              destaque: query.destaque,
-            }
-          : {}),
+      ...(query.featured !== undefined
+        ? {
+            featured: query.featured,
+          }
+        : {}),
 
-        ...(query.bestSeller !== undefined
-          ? {
-              bestSeller: query.bestSeller,
-            }
-          : {}),
-      },
+      ...(query.destaque !== undefined
+        ? {
+            destaque: query.destaque,
+          }
+        : {}),
 
-      include: {
-        subcategory: {
-          include: {
-            category: true,
+      ...(query.bestSeller !== undefined
+        ? {
+            bestSeller: query.bestSeller,
+          }
+        : {}),
+    };
+
+    const orderBy =
+      sort === "price_asc"
+        ? { price: "asc" as const }
+        : sort === "price_desc"
+          ? { price: "desc" as const }
+          : sort === "rating"
+            ? { rating: "desc" as const }
+            : { createdAt: "desc" as const };
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
           },
         },
 
-        images: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-        },
-      },
+        orderBy,
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        skip,
+        take: limit,
+      }),
 
-    return serializeProducts(products);
+      prisma.product.count({
+        where,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      products: serializeProducts(products),
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
   },
 
   async listAdmin(query: ProductAdminQuery = {}) {
@@ -6154,7 +6037,6 @@ function createProductSlug(title: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
 ```
 
 ## src\services\search-service.ts
@@ -6304,7 +6186,6 @@ export const searchService = {
     };
   },
 };
-
 ```
 
 ## src\services\subcategories-services.ts
@@ -6357,14 +6238,12 @@ export const subcategoriesService = {
     });
   },
 };
-
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
-
 ```
 
 ## src\types\express\index.d.ts
@@ -6378,7 +6257,6 @@ declare namespace Express {
     };
   }
 }
-
 ```
 
 ## src\utils\AppError.ts
@@ -6395,7 +6273,6 @@ class AppError {
 }
 
 export { AppError };
-
 ```
 
 ## src\utils\createSlug.ts
@@ -6416,13 +6293,19 @@ export function createSlug(value: string, suffix?: string) {
 
   return `${slug}-${suffix}`;
 }
-
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -6438,7 +6321,16 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -6447,7 +6339,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js"
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -6460,7 +6352,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -6477,13 +6370,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -6493,7 +6393,6 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
-
 ```
 
 ## tools\instrucoes.md
@@ -6661,11 +6560,9 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
-
 
 ## tools\WorldMix360-API.md
 
-
 ## .env
 
 ```env
@@ -6686,8 +6583,8 @@ MELI_REDIRECT_URI=https://infrastructure-shorts-stroke-entities.trycloudflare.co
 
 ```ts
 export declare const env: {
-    DATABASE_URL: string;
-    JWT_SECRET: string;
+  DATABASE_URL: string;
+  JWT_SECRET: string;
 };
 //# sourceMappingURL=env.d.ts.map
 ```
@@ -6704,7 +6601,6 @@ const envSchema = z.object({
 });
 export const env = envSchema.parse(process.env);
 //# sourceMappingURL=env.js.map
-
 ```
 
 ## env.ts
@@ -6726,7 +6622,6 @@ const envSchema = z.object({
 });
 
 export const env = envSchema.parse(process.env);
-
 ```
 
 ## package.json
@@ -6776,7 +6671,6 @@ export const env = envSchema.parse(process.env);
     "typescript": "^7.0.2"
   }
 }
-
 ```
 
 ## prisma7.config.ts
@@ -6794,7 +6688,6 @@ export default defineConfig({
     url: env("DATABASE_URL"),
   },
 });
-
 ```
 
 ## README.md
@@ -6861,7 +6754,6 @@ GET  /products
 POST /products/sync  (header x-sync-token)
 ```
 
-
 ## skills-lock.json
 
 ```json
@@ -6924,7 +6816,6 @@ POST /products/sync  (header x-sync-token)
     }
   }
 }
-
 ```
 
 ## src\app.ts
@@ -6969,7 +6860,6 @@ app.use(routes);
 app.use(errorHandling);
 
 export { app };
-
 ```
 
 ## src\configs\auth.ts
@@ -6990,7 +6880,6 @@ export const authConfig = {
     expiresIn: "1d",
   },
 };
-
 ```
 
 ## src\configs\mercado-livre.ts
@@ -7017,7 +6906,6 @@ export function assertMercadoLivreConfig() {
     );
   }
 }
-
 ```
 
 ## src\controllers\blog-categories-controller.ts
@@ -7244,7 +7132,6 @@ export class BlogCategoriesController {
     return response.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\blog-controller.ts
@@ -7526,7 +7413,6 @@ export class BlogController {
     });
   }
 }
-
 ```
 
 ## src\controllers\categories-controllers.ts
@@ -7679,7 +7565,6 @@ export class CategoryController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\marketplace-controller.ts
@@ -7871,7 +7756,6 @@ export class MarketplaceController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\mercado-livre-controller.ts
@@ -8083,7 +7967,6 @@ export class MercadoLivreController {
     });
   }
 }
-
 ```
 
 ## src\controllers\products-controller.ts
@@ -8091,17 +7974,14 @@ export class MercadoLivreController {
 ```ts
 import type { Request, Response } from "express";
 import { z } from "zod";
-
 import { syncMercadoLivreProducts } from "@/services/mercado-livre-service";
 import { productsService } from "@/services/products-service";
-
 import { createSlug } from "@/utils/createSlug";
 
 const productImageSchema = z.object({
   imageUrl: z.string().trim().url(),
   sortOrder: z.coerce.number().int().nonnegative().optional(),
 });
-
 const createProductSchema = z.object({
   title: z.string().trim().min(1),
   description: z.string().trim().optional(),
@@ -8124,7 +8004,6 @@ const createProductSchema = z.object({
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
-
 const updateProductSchema = z.object({
   title: z.string().trim().min(1).optional(),
   description: z.string().trim().optional(),
@@ -8147,7 +8026,6 @@ const updateProductSchema = z.object({
   seoTitle: z.string().trim().optional(),
   seoDescription: z.string().trim().optional(),
 });
-
 const updateProductStatusSchema = z
   .object({
     active: z.coerce.boolean().optional(),
@@ -8163,23 +8041,19 @@ const updateProductStatusSchema = z
       data.featured !== undefined ||
       data.destaque !== undefined ||
       data.bestSeller !== undefined,
-    {
-      message: "Informe pelo menos um status para atualizar.",
-    },
+    { message: "Informe pelo menos um status para atualizar." },
   );
-
-const idSchema = z.object({
-  id: z.string().uuid(),
-});
-
-const slugSchema = z.object({
-  slug: z.string().trim().min(1),
-});
-
+const idSchema = z.object({ id: z.string().uuid() });
+const slugSchema = z.object({ slug: z.string().trim().min(1) });
+const productSortSchema = z.enum([
+  "recent",
+  "price_asc",
+  "price_desc",
+  "rating",
+]);
 type CreateProductData = z.infer<typeof createProductSchema>;
 type UpdateProductData = z.infer<typeof updateProductSchema>;
 type UpdateProductStatusData = z.infer<typeof updateProductStatusSchema>;
-
 export class ProductsController {
   async index(request: Request, response: Response) {
     const query = z
@@ -8191,16 +8065,14 @@ export class ProductsController {
         featured: z.coerce.boolean().optional(),
         destaque: z.coerce.boolean().optional(),
         bestSeller: z.coerce.boolean().optional(),
+        page: z.coerce.number().int().positive().default(1),
+        limit: z.coerce.number().int().positive().max(100).default(24),
+        sort: productSortSchema.default("recent"),
       })
       .parse(request.query);
-
-    const products = await productsService.list(query);
-
-    return response.json({
-      products,
-    });
+    const result = await productsService.list(query);
+    return response.json(result);
   }
-
   async indexAdmin(request: Request, response: Response) {
     const query = z
       .object({
@@ -8214,123 +8086,84 @@ export class ProductsController {
         available: z.coerce.boolean().optional(),
       })
       .parse(request.query);
-
     const products = await productsService.listAdmin(query);
-
-    return response.json({
-      products,
-    });
+    return response.json({ products });
   }
-
   async create(request: Request, response: Response) {
     const data: CreateProductData = createProductSchema.parse(request.body);
     const slug = createSlug(data.title);
     const existingProduct = await productsService.findBySlug(slug);
-
     if (existingProduct) {
-      return response.status(409).json({
-        message: "Já existe um produto com esse título.",
-      });
+      return response
+        .status(409)
+        .json({ message: "Já existe um produto com esse título." });
     }
-
     const product = await productsService.create(data);
-
     return response.status(201).json({ product });
   }
-
   async update(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const data: UpdateProductData = updateProductSchema.parse(request.body);
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     if (data.title && data.title !== product.title) {
       const slug = createSlug(data.title);
       const existingProduct = await productsService.findBySlugExceptId(
         slug,
         product.id,
       );
-
       if (existingProduct) {
-        return response.status(409).json({
-          message: "Já existe um produto com esse título.",
-        });
+        return response
+          .status(409)
+          .json({ message: "Já existe um produto com esse título." });
       }
     }
-
     const updatedProduct = await productsService.update(product.id, data);
-
     return response.json({ product: updatedProduct });
   }
-
   async updateStatus(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const data: UpdateProductStatusData = updateProductStatusSchema.parse(
       request.body,
     );
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     const updatedProduct = await productsService.updateStatus(product.id, data);
-
     return response.json({ product: updatedProduct });
   }
-
   async sync(request: Request, response: Response) {
     const expectedSecret = process.env.PRODUCT_SYNC_SECRET;
     const receivedSecret = request.header("x-sync-token");
-
     if (!expectedSecret || receivedSecret !== expectedSecret) {
-      return response.status(401).json({
-        message: "Não autorizado",
-      });
+      return response.status(401).json({ message: "Não autorizado" });
     }
-
     const result = await syncMercadoLivreProducts();
-
     return response.json({
       products: result.products,
       synced: result.products.length,
     });
   }
-
   async showById(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);
     const product = await productsService.findById(id);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     return response.json({ product });
   }
-
   async show(request: Request, response: Response) {
     const { slug } = slugSchema.parse(request.params);
     const product = await productsService.findBySlug(slug);
-
     if (!product) {
-      return response.status(404).json({
-        message: "Produto não encontrado",
-      });
+      return response.status(404).json({ message: "Produto não encontrado" });
     }
-
     return response.json({ product });
   }
 }
-
 ```
 
 ## src\controllers\search-controller.ts
@@ -8361,7 +8194,6 @@ export class SearchController {
     });
   }
 }
-
 ```
 
 ## src\controllers\sessions-controllers.ts
@@ -8409,7 +8241,6 @@ class SessionsController {
 }
 
 export { SessionsController };
-
 ```
 
 ## src\controllers\subcategories-controller.ts
@@ -8598,7 +8429,6 @@ export class SubcategoriesController {
     return res.status(204).send();
   }
 }
-
 ```
 
 ## src\controllers\users-controllers.ts
@@ -8715,7 +8545,6 @@ class UserController {
 }
 
 export { UserController };
-
 ```
 
 ## src\database\prisma.ts
@@ -8736,7 +8565,6 @@ export const prisma = new PrismaClient({
   adapter,
   log: process.env.NODE_ENV === "production" ? [] : ["query"],
 });
-
 ```
 
 ## src\middleware\ensure-admin.ts
@@ -8757,7 +8585,6 @@ export function ensureAdmin(
 
   return next();
 }
-
 ```
 
 ## src\middleware\ensure-authenticated.ts
@@ -8804,7 +8631,6 @@ export function ensureAuthenticated(
     throw new AppError("Token inválido ou expirado", 401);
   }
 }
-
 ```
 
 ## src\middleware\error-handling.ts
@@ -8831,7 +8657,6 @@ export function errorHandling(
   }
   return response.status(500).json({ message: error.message });
 }
-
 ```
 
 ## src\routes\blog-categories-routes.ts
@@ -8885,7 +8710,6 @@ blogCategoriesRoutes.delete(
 );
 
 export { blogCategoriesRoutes };
-
 ```
 
 ## src\routes\blog-routes.ts
@@ -8941,7 +8765,6 @@ blogRoutes.delete(
 blogRoutes.get("/:slug", blogController.show);
 
 export { blogRoutes };
-
 ```
 
 ## src\routes\categories-routes.ts
@@ -8985,7 +8808,6 @@ categoriesRouter.delete(
 );
 
 export { categoriesRouter as categoriesRoutes };
-
 ```
 
 ## src\routes\index.ts
@@ -9028,7 +8850,6 @@ routes.use("/blog/categories", blogCategoriesRoutes);
 routes.use("/blog", blogRoutes);
 
 export { routes };
-
 ```
 
 ## src\routes\marketplace-routes.ts
@@ -9071,7 +8892,6 @@ marketplaceRouter.delete(
 );
 
 export { marketplaceRouter as marketplaceRoutes };
-
 ```
 
 ## src\routes\mercado-livre-routes.ts
@@ -9204,7 +9024,6 @@ mercadoLivreRoutes.post(
 );
 
 export { mercadoLivreRoutes };
-
 ```
 
 ## src\routes\product-routes.ts
@@ -9273,7 +9092,6 @@ productRoutes.post(
 );
 
 export { productRoutes };
-
 ```
 
 ## src\routes\search-routes.ts
@@ -9290,7 +9108,6 @@ const searchController = new SearchController();
 searchRouter.get("/", searchController.search);
 
 export { searchRouter };
-
 ```
 
 ## src\routes\sessions-routes.ts
@@ -9305,7 +9122,6 @@ const sessionsController = new SessionsController();
 sessionsRoutes.post("/", sessionsController.create);
 
 export { sessionsRoutes };
-
 ```
 
 ## src\routes\subcategories-routes.ts
@@ -9348,7 +9164,6 @@ subcategoriesRouter.delete(
 );
 
 export { subcategoriesRouter as subcategoriesRoutes };
-
 ```
 
 ## src\routes\user-routes.ts
@@ -9380,7 +9195,6 @@ userRoutes.patch(
 userRoutes.put("/:id", ensureAuthenticated, ensureAdmin, userController.update);
 
 export { userRoutes };
-
 ```
 
 ## src\server.ts
@@ -9393,7 +9207,6 @@ const PORT = Number(process.env.PORT ?? 3333);
 app.listen(PORT, () => {
   console.log(`WorldMix360 API rodando na porta: ${PORT}`);
 });
-
 ```
 
 ## src\services\blog-categories-service.ts
@@ -9648,7 +9461,6 @@ export const blogCategoriesService = {
     });
   },
 };
-
 ```
 
 ## src\services\blog-service.ts
@@ -10156,7 +9968,6 @@ export const blogService = {
     });
   },
 };
-
 ```
 
 ## src\services\categories-service.ts
@@ -10207,7 +10018,6 @@ export const categoryService = {
     });
   },
 };
-
 ```
 
 ## src\services\marketplace-service.ts
@@ -10258,7 +10068,6 @@ export const marketplaceService = {
     });
   },
 };
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.api.ts
@@ -10326,7 +10135,6 @@ export async function getCatalogOffersBySeller(
     (offer) => String(offer.seller_id) === sellerId,
   );
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.auth.ts
@@ -10571,7 +10379,6 @@ export async function connectMercadoLivre(code: string, state: string) {
     expiresIn: token.expires_in,
   };
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.helpers.ts
@@ -10864,7 +10671,6 @@ export function mergeProductImages(
     sortOrder: index,
   }));
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.service.ts
@@ -11917,7 +11723,6 @@ export async function getMercadoLivreProducts(search?: string) {
     },
   });
 }
-
 ```
 
 ## src\services\mercado-livre\mercado-livre.types.ts
@@ -12056,7 +11861,6 @@ export type ResolvedMercadoLivreLink = {
   requestedItemId: string | null;
   requestedWid: string | null;
 };
-
 ```
 
 ## src\services\mercado-livre-service.ts
@@ -12079,7 +11883,6 @@ export type {
   ImportInput,
   UpdateMercadoLivreProductOfferInput,
 } from "./mercado-livre/mercado-livre.types";
-
 ```
 
 ## src\services\products-service.ts
@@ -12146,6 +11949,8 @@ type ProductStatusInput = {
   bestSeller?: boolean | undefined;
 };
 
+type ProductSort = "recent" | "price_asc" | "price_desc" | "rating";
+
 type ProductQuery = {
   search?: string | undefined;
   category?: string | undefined;
@@ -12154,6 +11959,9 @@ type ProductQuery = {
   featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: ProductSort | undefined;
 };
 
 type ProductAdminQuery = {
@@ -12223,104 +12031,138 @@ function serializeProducts<T extends ProductWithRelations>(products: T[]) {
 
 export const productsService = {
   async list(query: ProductQuery = {}) {
-    const products = await prisma.product.findMany({
-      where: {
-        active: true,
-        available: true,
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 24;
+    const skip = (page - 1) * limit;
+    const sort = query.sort ?? "recent";
 
-        ...(query.search
-          ? {
-              OR: [
-                {
-                  title: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  description: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-              ],
-            }
-          : {}),
+    const where = {
+      active: true,
+      available: true,
 
-        ...(query.category
-          ? {
-              subcategory: {
-                category: {
-                  OR: [
-                    {
-                      slug: {
-                        equals: query.category,
-                        mode: "insensitive",
-                      },
-                    },
-                    {
-                      name: {
-                        equals: query.category,
-                        mode: "insensitive",
-                      },
-                    },
-                  ],
+      ...(query.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: query.search,
+                  mode: "insensitive" as const,
                 },
               },
-            }
-          : {}),
+              {
+                description: {
+                  contains: query.search,
+                  mode: "insensitive" as const,
+                },
+              },
+            ],
+          }
+        : {}),
 
-        ...(query.subcategoryId
-          ? {
-              subcategoryId: query.subcategoryId,
-            }
-          : {}),
+      ...(query.category
+        ? {
+            subcategory: {
+              category: {
+                OR: [
+                  {
+                    slug: {
+                      equals: query.category,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                  {
+                    name: {
+                      equals: query.category,
+                      mode: "insensitive" as const,
+                    },
+                  },
+                ],
+              },
+            },
+          }
+        : {}),
 
-        ...(query.marketplaceId
-          ? {
-              marketplaceId: query.marketplaceId,
-            }
-          : {}),
+      ...(query.subcategoryId
+        ? {
+            subcategoryId: query.subcategoryId,
+          }
+        : {}),
 
-        ...(query.featured !== undefined
-          ? {
-              featured: query.featured,
-            }
-          : {}),
+      ...(query.marketplaceId
+        ? {
+            marketplaceId: query.marketplaceId,
+          }
+        : {}),
 
-        ...(query.destaque !== undefined
-          ? {
-              destaque: query.destaque,
-            }
-          : {}),
+      ...(query.featured !== undefined
+        ? {
+            featured: query.featured,
+          }
+        : {}),
 
-        ...(query.bestSeller !== undefined
-          ? {
-              bestSeller: query.bestSeller,
-            }
-          : {}),
-      },
+      ...(query.destaque !== undefined
+        ? {
+            destaque: query.destaque,
+          }
+        : {}),
 
-      include: {
-        subcategory: {
-          include: {
-            category: true,
+      ...(query.bestSeller !== undefined
+        ? {
+            bestSeller: query.bestSeller,
+          }
+        : {}),
+    };
+
+    const orderBy =
+      sort === "price_asc"
+        ? { price: "asc" as const }
+        : sort === "price_desc"
+          ? { price: "desc" as const }
+          : sort === "rating"
+            ? { rating: "desc" as const }
+            : { createdAt: "desc" as const };
+
+    const [products, total] = await Promise.all([
+      prisma.product.findMany({
+        where,
+
+        include: {
+          subcategory: {
+            include: {
+              category: true,
+            },
+          },
+
+          images: {
+            orderBy: {
+              sortOrder: "asc",
+            },
           },
         },
 
-        images: {
-          orderBy: {
-            sortOrder: "asc",
-          },
-        },
-      },
+        orderBy,
 
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+        skip,
+        take: limit,
+      }),
 
-    return serializeProducts(products);
+      prisma.product.count({
+        where,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      products: serializeProducts(products),
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+      },
+    };
   },
 
   async listAdmin(query: ProductAdminQuery = {}) {
@@ -12821,7 +12663,6 @@ function createProductSlug(title: string) {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
-
 ```
 
 ## src\services\search-service.ts
@@ -12971,7 +12812,6 @@ export const searchService = {
     };
   },
 };
-
 ```
 
 ## src\services\subcategories-services.ts
@@ -13024,14 +12864,12 @@ export const subcategoriesService = {
     });
   },
 };
-
 ```
 
 ## src\types\aliases.d.ts
 
 ```ts
 declare module "@/*";
-
 ```
 
 ## src\types\express\index.d.ts
@@ -13045,7 +12883,6 @@ declare namespace Express {
     };
   }
 }
-
 ```
 
 ## src\utils\AppError.ts
@@ -13062,7 +12899,6 @@ class AppError {
 }
 
 export { AppError };
-
 ```
 
 ## src\utils\createSlug.ts
@@ -13083,13 +12919,19 @@ export function createSlug(value: string, suffix?: string) {
 
   return `${slug}-${suffix}`;
 }
-
 ```
 
 ## tools\generate-md.ts
 
 ```ts
-import { readdirSync, statSync, readFileSync, appendFileSync, existsSync, unlinkSync } from "fs";
+import {
+  readdirSync,
+  statSync,
+  readFileSync,
+  appendFileSync,
+  existsSync,
+  unlinkSync,
+} from "fs";
 import { join, extname, dirname, resolve, relative, basename } from "path";
 import { fileURLToPath } from "url";
 
@@ -13105,7 +12947,16 @@ const projectName = basename(projectPath);
 // gera o arquivo dentro de tools com o nome do projeto
 const outputFile = join(__dirname, `${projectName}.md`);
 
-const extensions = [".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".env", ".css"];
+const extensions = [
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".json",
+  ".md",
+  ".env",
+  ".css",
+];
 const specialFiles = [
   "Dockerfile",
   "Makefile",
@@ -13114,7 +12965,7 @@ const specialFiles = [
   "vite.config.ts",
   "vite.config.js",
   "tailwind.config.js",
-  "postcss.config.js"
+  "postcss.config.js",
 ];
 const excludeDirs = ["node_modules", ".git", "dist", "build", "generated"];
 const excludeFiles = ["package-lock.json"];
@@ -13127,7 +12978,8 @@ function formatHeader(fullPath: string): string {
 }
 
 function wrapContent(ext: string, content: string): string {
-  if ([".ts", ".tsx", ".js"].includes(ext)) return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
+  if ([".ts", ".tsx", ".js"].includes(ext))
+    return `\n\`\`\`${ext.replace(".", "")}\n${content}\n\`\`\`\n`;
   if (ext === ".json") return `\n\`\`\`json\n${content}\n\`\`\`\n`;
   if (ext === ".md") return `\n${content}\n`;
   if (ext === ".env") return `\n\`\`\`env\n${content}\n\`\`\`\n`;
@@ -13144,13 +12996,20 @@ function walk(dir: string): void {
       if (!excludeDirs.includes(file)) walk(fullPath);
     } else {
       const ext = extname(file) || file;
-      if ((extensions.includes(ext) || specialFiles.includes(file)) && !excludeFiles.includes(file)) {
+      if (
+        (extensions.includes(ext) || specialFiles.includes(file)) &&
+        !excludeFiles.includes(file)
+      ) {
         try {
           const content = readFileSync(fullPath, "utf8");
           appendFileSync(outputFile, `\n${formatHeader(fullPath)}\n`);
           appendFileSync(outputFile, wrapContent(ext, content));
         } catch (err) {
-          console.error("⚠️ Erro ao ler arquivo:", fullPath, (err as Error).message);
+          console.error(
+            "⚠️ Erro ao ler arquivo:",
+            fullPath,
+            (err as Error).message,
+          );
         }
       }
     }
@@ -13160,7 +13019,6 @@ function walk(dir: string): void {
 console.log(`🔍 Gerando arquivo ${projectName}.md...`);
 walk(projectPath);
 console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
-
 ```
 
 ## tools\instrucoes.md
@@ -13328,8 +13186,6 @@ console.log(`✅ Arquivo gerado com sucesso em ${outputFile}`);
 ```
 npm run generate-md
 ```
-
-
 
 ## tsconfig.json
 
@@ -13366,5 +13222,4 @@ npm run generate-md
   "include": ["src", "src/types", "env.ts"],
   "exclude": ["node_modules", "dist"]
 }
-
 ```
