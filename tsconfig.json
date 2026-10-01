@@ -24,7 +24,7 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "skipLibCheck": true,
-    "types": ["node", "express"],
+    "types": ["node", "express", "jest"],
     "ignoreDeprecations": "6.0"
   },
   "include": ["src", "src/types", "env.ts"],

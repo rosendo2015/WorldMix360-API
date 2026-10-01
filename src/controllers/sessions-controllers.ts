@@ -9,7 +9,7 @@ import { AppError } from "../utils/AppError";
 class SessionsController {
   async create(request: Request, response: Response) {
     const bodySchema = z.object({
-      email: z.email({ message: "Email invalid" }),
+      email: z.string().email({ message: "Email invalid" }),
       password: z.string(),
     });
     const { email, password } = bodySchema.parse(request.body);

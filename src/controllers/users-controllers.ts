@@ -9,7 +9,7 @@ class UserController {
     try {
       const bodySchema = z.object({
         name: z.string().trim().min(3),
-        email: z.email(),
+        email: z.string().email(),
         password: z.string().min(6),
       });
 
@@ -36,7 +36,7 @@ class UserController {
       return response.json(userWithoutPassword);
     } catch (error) {
       console.log(error);
-      next();
+      next(error);
     }
   }
 
