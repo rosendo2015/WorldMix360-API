@@ -11,6 +11,10 @@ export const marketplaceSchema = z.object({
   description: z.string().optional(),
   websiteUrl: z.string().url("Website deve ser uma URL válida").optional(),
   logoUrl: z.string().url("Logo deve ser uma URL válida").optional(),
+  badgeColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Informe uma cor hexadecimal válida")
+    .optional(),
   active: z.boolean().optional().default(true),
   sortOrder: z.number().int().optional().default(0),
 });
@@ -22,6 +26,10 @@ const createMarketplaceSchema = z.object({
   description: z.string().optional(),
   websiteUrl: z.string().url("Website deve ser uma URL válida").optional(),
   logoUrl: z.string().url("Logo deve ser uma URL válida").optional(),
+  badgeColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Informe uma cor hexadecimal válida")
+    .optional(),
   active: z.boolean().optional().default(true),
   sortOrder: z.number().int().optional().default(0),
 });
@@ -31,6 +39,10 @@ const updateMarketplaceSchema = z.object({
   description: z.string().optional(),
   websiteUrl: z.string().url().optional(),
   logoUrl: z.string().url().optional(),
+  badgeColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Informe uma cor hexadecimal válida")
+    .optional(),
   active: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
 });
@@ -64,6 +76,7 @@ export class MarketplaceController {
         description: data.description ?? null,
         websiteUrl: data.websiteUrl ?? null,
         logoUrl: data.logoUrl ?? null,
+        badgeColor: data.badgeColor ?? "#f3f4f6",
         active: data.active,
         sortOrder: data.sortOrder,
       },
@@ -156,6 +169,11 @@ export class MarketplaceController {
         ...(data.logoUrl !== undefined
           ? {
               logoUrl: data.logoUrl,
+            }
+          : {}),
+        ...(data.badgeColor !== undefined
+          ? {
+              badgeColor: data.badgeColor,
             }
           : {}),
         ...(data.active !== undefined

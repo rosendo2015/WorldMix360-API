@@ -232,6 +232,8 @@ export const productsService = {
             },
           },
 
+          marketplace: true,
+
           images: {
             orderBy: {
               sortOrder: "asc",
@@ -359,6 +361,8 @@ export const productsService = {
             category: true,
           },
         },
+
+        marketplace: true,
 
         images: {
           orderBy: {

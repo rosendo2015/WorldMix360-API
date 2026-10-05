@@ -101,6 +101,7 @@ model Marketplace {
   description String?
   websiteUrl  String? @map("website_url")
   logoUrl     String? @map("logo_url")
+  badgeColor  String  @default("#f3f4f6") @map("badge_color")
   active      Boolean @default(true)
   sortOrder   Int     @default(0) @map("sort_order")
 
