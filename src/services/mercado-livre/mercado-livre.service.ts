@@ -521,8 +521,6 @@ export async function importMercadoLivreProduct(input: ImportInput) {
      */
     available: true,
 
-    featured: input.featured ?? false,
-
     destaque: input.destaque ?? false,
 
     bestSeller: input.bestSeller ?? false,

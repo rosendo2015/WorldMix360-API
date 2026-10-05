@@ -42,7 +42,6 @@ const importProductSchema = z.object({
   rating: z.number().min(0).max(5).optional(),
   reviewsCount: z.number().int().min(0).optional(),
 
-  featured: z.boolean().optional(),
   destaque: z.boolean().optional(),
   bestSeller: z.boolean().optional(),
   available: z.boolean().optional(),
@@ -156,8 +155,6 @@ export class MercadoLivreController {
       ...(body.reviewsCount !== undefined
         ? { reviewsCount: body.reviewsCount }
         : {}),
-
-      ...(body.featured !== undefined ? { featured: body.featured } : {}),
 
       ...(body.destaque !== undefined ? { destaque: body.destaque } : {}),
 

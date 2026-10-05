@@ -22,7 +22,6 @@ const createProductSchema = z.object({
   affiliateUrl: z.string().trim().url(),
   subcategoryId: z.string().uuid("ID da subcategoria inválido"),
   marketplaceId: z.string().uuid("ID do marketplace inválido"),
-  featured: z.coerce.boolean().default(false),
   destaque: z.coerce.boolean().default(false),
   bestSeller: z.coerce.boolean().default(false),
   available: z.coerce.boolean().default(true),
@@ -44,7 +43,6 @@ const updateProductSchema = z.object({
   affiliateUrl: z.string().trim().url().optional(),
   subcategoryId: z.string().uuid().optional(),
   marketplaceId: z.string().uuid().optional(),
-  featured: z.coerce.boolean().optional(),
   destaque: z.coerce.boolean().optional(),
   bestSeller: z.coerce.boolean().optional(),
   available: z.coerce.boolean().optional(),
@@ -56,7 +54,6 @@ const updateProductStatusSchema = z
   .object({
     active: z.coerce.boolean().optional(),
     available: z.coerce.boolean().optional(),
-    featured: z.coerce.boolean().optional(),
     destaque: z.coerce.boolean().optional(),
     bestSeller: z.coerce.boolean().optional(),
   })
@@ -64,7 +61,6 @@ const updateProductStatusSchema = z
     (data) =>
       data.active !== undefined ||
       data.available !== undefined ||
-      data.featured !== undefined ||
       data.destaque !== undefined ||
       data.bestSeller !== undefined,
     { message: "Informe pelo menos um status para atualizar." },
@@ -88,7 +84,6 @@ export class ProductsController {
         category: z.string().trim().optional(),
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
-        featured: z.coerce.boolean().optional(),
         destaque: z.coerce.boolean().optional(),
         bestSeller: z.coerce.boolean().optional(),
         page: z.coerce.number().int().positive().default(1),
@@ -105,7 +100,6 @@ export class ProductsController {
         search: z.string().trim().optional(),
         subcategoryId: z.string().uuid().optional(),
         marketplaceId: z.string().uuid().optional(),
-        featured: z.coerce.boolean().optional(),
         destaque: z.coerce.boolean().optional(),
         bestSeller: z.coerce.boolean().optional(),
         active: z.coerce.boolean().optional(),
@@ -148,6 +142,15 @@ export class ProductsController {
     }
     const updatedProduct = await productsService.update(product.id, data);
     return response.json({ product: updatedProduct });
+  }
+  async delete(request: Request, response: Response) {
+    const { id } = idSchema.parse(request.params);
+    const product = await productsService.findById(id);
+    if (!product) {
+      return response.status(404).json({ message: "Produto não encontrado" });
+    }
+    await productsService.delete(product.id);
+    return response.status(204).send();
   }
   async updateStatus(request: Request, response: Response) {
     const { id } = idSchema.parse(request.params);

@@ -19,7 +19,6 @@ type CreateProductInput = {
   affiliateUrl: string;
   subcategoryId: string;
   marketplaceId: string;
-  featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
   available?: boolean | undefined;
@@ -42,7 +41,6 @@ type UpdateProductInput = {
   affiliateUrl?: string | undefined;
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
-  featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
   available?: boolean | undefined;
@@ -54,7 +52,6 @@ type UpdateProductInput = {
 type ProductStatusInput = {
   active?: boolean | undefined;
   available?: boolean | undefined;
-  featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
 };
@@ -66,7 +63,6 @@ type ProductQuery = {
   category?: string | undefined;
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
-  featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
   page?: number | undefined;
@@ -78,7 +74,6 @@ type ProductAdminQuery = {
   search?: string | undefined;
   subcategoryId?: string | undefined;
   marketplaceId?: string | undefined;
-  featured?: boolean | undefined;
   destaque?: boolean | undefined;
   bestSeller?: boolean | undefined;
   active?: boolean | undefined;
@@ -204,12 +199,6 @@ export const productsService = {
           }
         : {}),
 
-      ...(query.featured !== undefined
-        ? {
-            featured: query.featured,
-          }
-        : {}),
-
       ...(query.destaque !== undefined
         ? {
             destaque: query.destaque,
@@ -306,12 +295,6 @@ export const productsService = {
         ...(query.marketplaceId
           ? {
               marketplaceId: query.marketplaceId,
-            }
-          : {}),
-
-        ...(query.featured !== undefined
-          ? {
-              featured: query.featured,
             }
           : {}),
 
@@ -476,7 +459,6 @@ export const productsService = {
         affiliateUrl: data.affiliateUrl,
 
         available: data.available ?? true,
-        featured: data.featured ?? false,
         destaque: data.destaque ?? false,
         bestSeller: data.bestSeller ?? false,
         active: data.active ?? true,
@@ -618,12 +600,6 @@ export const productsService = {
               }
             : {}),
 
-          ...(data.featured !== undefined
-            ? {
-                featured: data.featured,
-              }
-            : {}),
-
           ...(data.destaque !== undefined
             ? {
                 destaque: data.destaque,
@@ -726,12 +702,6 @@ export const productsService = {
             }
           : {}),
 
-        ...(data.featured !== undefined
-          ? {
-              featured: data.featured,
-            }
-          : {}),
-
         ...(data.destaque !== undefined
           ? {
               destaque: data.destaque,
@@ -761,6 +731,14 @@ export const productsService = {
     });
 
     return serializeProduct(product);
+  },
+
+  async delete(id: string) {
+    return prisma.product.delete({
+      where: {
+        id,
+      },
+    });
   },
 };
 

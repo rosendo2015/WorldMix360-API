@@ -135,7 +135,6 @@ model Product {
   affiliateUrl String @map("affiliate_url")
 
   available  Boolean @default(true)
-  featured   Boolean @default(false)
   destaque   Boolean @default(false)
   bestSeller Boolean @default(false)
   active     Boolean @default(true)
@@ -164,7 +163,6 @@ model Product {
   @@index([destaque])
   @@index([bestSeller])
   @@index([active])
-  @@index([featured])
   @@map("products")
 }
 

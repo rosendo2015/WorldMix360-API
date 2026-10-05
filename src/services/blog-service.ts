@@ -86,7 +86,7 @@ const blogPostInclude = {
           reviewsCount: true,
           affiliateUrl: true,
           available: true,
-          featured: true,
+          destaque: true,
           active: true,
         },
       },

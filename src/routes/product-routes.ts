@@ -46,6 +46,13 @@ productRoutes.put(
   productsController.update,
 );
 
+productRoutes.delete(
+  "/:id",
+  ensureAuthenticated,
+  ensureAdmin,
+  productsController.delete,
+);
+
 productRoutes.patch(
   "/:id/status",
   ensureAuthenticated,

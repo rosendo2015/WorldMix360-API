@@ -87,7 +87,6 @@ export type ImportInput = {
   currency?: string;
   rating?: number;
   reviewsCount?: number;
-  featured?: boolean;
   destaque?: boolean;
   bestSeller?: boolean;
   available?: boolean;
