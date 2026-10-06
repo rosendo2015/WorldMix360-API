@@ -10,6 +10,7 @@ import {
 } from "./mercado-livre.api";
 import {
   connectMercadoLivre,
+  ensureMercadoLivreAccessToken,
   getMercadoLivreAuthorizationUrl,
   MARKETPLACE_ID,
 } from "./mercado-livre.auth";
@@ -647,10 +648,15 @@ export async function syncMercadoLivreProducts() {
     },
   });
 
+  if (marketplaceProducts.length > 0) {
+    await ensureMercadoLivreAccessToken();
+  }
+
   const results: Array<{
     id: string;
     productId: string;
-    status: string;
+    productTitle: string;
+    status: "SUCCESS" | "UNAVAILABLE" | "ERROR";
     error?: string;
     itemId?: string | null;
     sellerId?: string | null;
@@ -722,6 +728,7 @@ export async function syncMercadoLivreProducts() {
         results.push({
           id: marketplaceProduct.id,
           productId: marketplaceProduct.productId,
+          productTitle: marketplaceProduct.product.title,
           status: "UNAVAILABLE",
         });
 
@@ -767,6 +774,7 @@ export async function syncMercadoLivreProducts() {
       results.push({
         id: marketplaceProduct.id,
         productId: marketplaceProduct.productId,
+        productTitle: marketplaceProduct.product.title,
         status: "SUCCESS",
         itemId: marketplaceProduct.itemId,
         sellerId: marketplaceProduct.sellerId,
@@ -793,14 +801,31 @@ export async function syncMercadoLivreProducts() {
       results.push({
         id: marketplaceProduct.id,
         productId: marketplaceProduct.productId,
+        productTitle: marketplaceProduct.product.title,
         status: "ERROR",
         error: message,
       });
     }
   }
 
+  const summary = {
+    total: results.length,
+    updated: results.filter((product) => product.status === "SUCCESS").length,
+    unavailable: results.filter((product) => product.status === "UNAVAILABLE")
+      .length,
+    failed: results.filter((product) => product.status === "ERROR").length,
+  };
+
+  const message =
+    summary.total === 0
+      ? "Nenhum produto vinculado ao Mercado Livre para sincronizar."
+      : summary.failed > 0
+        ? `Sincronização parcial: ${summary.updated} atualizado(s), ${summary.unavailable} indisponível(is) e ${summary.failed} com falha.`
+        : `Sincronização concluída: ${summary.updated} atualizado(s), ${summary.unavailable} indisponível(is).`;
+
   return {
-    message: "Produtos do Mercado Livre sincronizados com sucesso",
+    message,
+    summary,
     products: results,
   };
 }

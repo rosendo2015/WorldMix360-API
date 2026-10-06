@@ -195,8 +195,9 @@ export class MercadoLivreController {
   async sync(_request: Request, response: Response) {
     const result = await syncMercadoLivreProducts();
 
-    return response.json({
-      message: "Produtos do Mercado Livre sincronizados com sucesso",
+    return response.status(result.summary.failed > 0 ? 207 : 200).json({
+      message: result.message,
+      summary: result.summary,
       products: result.products,
     });
   }
